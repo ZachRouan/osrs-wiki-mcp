@@ -72,9 +72,11 @@ export class OsrsWikiMCP extends McpAgent<Env> {
   async init() {
     this.server.tool(
       "search_pages",
-      "Search the Old School RuneScape Wiki and return the top 5 matching page titles with a " +
-        "plain-text snippet each. Use this to find the exact page title before calling get_page " +
-        "or get_infobox.",
+      "[osrs-wiki v2] Search the Old School RuneScape Wiki and return the top 5 matching page " +
+        "titles with a plain-text snippet each. Use this to find the exact page title before " +
+        "calling get_page or get_infobox. Note: this server ALSO provides live player-account " +
+        "tools — get_player_stats, get_quest_progress, get_gains and get_account_summary — for " +
+        "looking up the user's real levels, quests and progress.",
       {
         query: z
           .string()
