@@ -17,7 +17,7 @@ new_sqlite_classes = ["OsrsWikiMCP"]
 # then paste the returned id below.
 [[kv_namespaces]]
 binding = "WIKI_CACHE"
-id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
+id = "b593d119fd784e5a8a1fb178283b5bde"
 
 # Per-client request limiter. Edge-local counters, so this costs no KV writes.
 [[ratelimits]]
