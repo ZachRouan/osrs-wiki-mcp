@@ -28,7 +28,7 @@ instead of a confident guess.
 | `get_gains` | Wise Old Man | XP/KC gained over day, week, month or year |
 | `get_account_summary` | all three | Combined snapshot — call this first |
 
-**Item data** — from the [RuneLite plugin](runelite-item-sync/) in this repo:
+**Item data** — from the [Item Sync RuneLite plugin](https://github.com/ZachRouan/runelite-item-sync):
 
 | Tool | Input | Returns |
 | --- | --- | --- |
@@ -108,14 +108,16 @@ of implying you were idle.
 
 ## RuneLite item sync
 
-`get_bank`, `get_equipment` and `check_materials` read snapshots pushed by the plugin in
-[`runelite-item-sync/`](runelite-item-sync/). Until one arrives, all three return setup
+`get_bank`, `get_equipment` and `check_materials` read snapshots pushed by the
+[Item Sync](https://github.com/ZachRouan/runelite-item-sync) RuneLite plugin, which lives in its
+own public repo so the Plugin Hub can build it. Until a snapshot arrives, all three return setup
 instructions rather than an error.
 
 Set `SYNC_TOKEN` as a Worker secret (above), build the plugin, and put the same token in its config
 alongside your `https://<worker>/ingest/items` URL. Full build and install steps are in the
-[plugin README](runelite-item-sync/README.md) — including why dropping a jar in
-`~/.runelite/plugins` does nothing, and why the Jagex Launcher blocks sideloading entirely.
+[plugin README](https://github.com/ZachRouan/runelite-item-sync). Local development helpers,
+including the developer-mode launcher for the Flatpak Jagex Launcher, are in
+[`plugin-dev/`](plugin-dev/).
 
 The endpoint is the only writable surface on this Worker:
 

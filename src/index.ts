@@ -41,10 +41,10 @@ const WIKISYNC_HELP =
 
 const ITEM_SYNC_HELP =
   "No item snapshot has ever been received for this account. Bank, inventory and equipment " +
-  "contents are not available from any public API — they come from the runelite-item-sync " +
-  "plugin in this project, which pushes them from the game client. See the 'RuneLite item sync' " +
-  "section of the project README for build and sideload instructions. Once the plugin is " +
-  "installed and configured, open your bank in game to send the first snapshot.";
+  "contents are not available from any public API — they come from the Item Sync RuneLite " +
+  "plugin (github.com/ZachRouan/runelite-item-sync), which pushes them from the game client. " +
+  "Once the plugin is installed and configured with the sync endpoint, open your bank in game " +
+  "to send the first snapshot.";
 
 /** An unfiltered bank is thousands of lines, so summarise instead. */
 const BANK_SUMMARY_LIMIT = 50;
