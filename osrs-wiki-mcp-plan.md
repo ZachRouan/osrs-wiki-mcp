@@ -4,19 +4,20 @@ A remote MCP server exposing the Old School RuneScape Wiki and live player data 
 tools for Claude (claude.ai custom connector). Goal: kill the "plausible-but-wrong item recipe"
 failure mode, and stop an assistant guessing at account state it could just look up.
 
-**Status: built and deployed.** v1 (wiki tools) and v2 (player tools) are live on Cloudflare
-Workers. This doc records what was built and, more usefully, which parts of the original plan
-turned out to be wrong.
+**Status: built and deployed.** v1 (wiki tools), v2 (player tools) and v3 (live item data) are
+live on Cloudflare Workers. This doc records what was built and, more usefully, which parts of the
+plan turned out to be wrong.
 
 ---
 
 ## Architecture
 
 ```
-claude.ai (custom connector, Streamable HTTP)
-        │
-        ▼
-Cloudflare Worker  (TypeScript, Agents SDK McpAgent)
+claude.ai (custom connector, Streamable HTTP)        RuneLite + Item Sync plugin
+        │                                                        │
+        │                                            POST /ingest/items (X-Sync-Token)
+        ▼                                                        ▼
+Cloudflare Worker  (TypeScript, Agents SDK McpAgent)  ◄──────────┘
         │  ├── secret path gate + rate limiter (60/min per IP)
         │  ├── Workers KV cache — wiki 1h, item mapping 24h, player data 5min
         ▼
@@ -54,6 +55,15 @@ Cloudflare Worker  (TypeScript, Agents SDK McpAgent)
 | `get_gains` | Wise Old Man | XP/KC gained over day/week/month/year |
 | `get_account_summary` | all three | combined snapshot, tolerates partial failure |
 
+**Items (v3)** — pushed by the [Item Sync](https://github.com/ZachRouan/runelite-item-sync) plugin,
+since no public API exposes container contents
+
+| Tool | Input | Output |
+|---|---|---|
+| `get_bank` | `search?` | matching items with quantities, or a summary when unfiltered |
+| `get_equipment` | — | worn gear by slot, plus inventory |
+| `check_materials` | `items[]` | owned quantity of each, across all containers |
+
 ## What the plan got wrong
 
 The useful part of this document. Each of these was caught by checking real data rather than
@@ -87,6 +97,47 @@ are now classified apart by name.
 **Wise Old Man reports zero gains** when a window contains fewer than two snapshots. That reads as
 "you did nothing" — an all-zero result now carries a note explaining what it actually means.
 
+**The bank vanishes if you re-read it later.** `ItemContainerChanged` hands the plugin the
+container, but the first implementation kept only a dirty flag and re-read via
+`client.getItemContainer()` after a 3s debounce. Closing the bank inside that window makes the
+re-read return null, so the upload went out carrying only the inventory rider. Caught in live play,
+not by any test: a quick open/close sent 2 stacks, holding it open sent 669. Contents are now
+copied out of the event immediately.
+
+**Exact name matching is load-bearing.** The account holds a *Topaz amulet (u)* and no strung
+*Topaz amulet*. A substring match would have reported the burning amulet recipe as satisfied and
+sent the player to enchant an amulet they do not own. Near-misses are surfaced separately under
+`similar`, never counted.
+
+**The GE mapping is tradeables-only.** Coins, Fire cape, Dragon defender and Barrows gloves have no
+entry, but RuneLite reports them — anything assuming the mapping covers every item silently loses
+them.
+
+**Inventory cannot be a sync trigger.** KV's free tier allows 1,000 writes/day across the item
+snapshots and the wiki cache combined. Inventory changes every few seconds, so triggering on it
+exhausts the budget in about 90 minutes and takes the wiki cache down with it. It rides along with
+bank and equipment syncs instead, and a content hash skips rewriting an unchanged bank while still
+refreshing its age.
+
+**The Plugin Hub will not distribute this.** Their rejected features list disallows "plugins which
+expose player information over HTTP", which is the whole point of it. Reasoning from Dink — which
+posts to user-configured webhooks and is merged — was wrong: it sends event notifications, not
+queryable account state. The plugin-hub README names that list as a review criterion and links it;
+checking it first would have saved the submission.
+
+**The Jagex Launcher makes sideloading impossible.** `loadSideLoadPlugins()` returns immediately
+unless developer mode, and `developerMode = options.has("developer-mode") && getLauncherVersion()
+== null` — any official launcher sets `runelite.launcher.version`, so the flag cannot help. The
+directory is also `~/.runelite/sideloaded-plugins`, not the `~/.runelite/plugins` that the Plugin
+Hub uses. The documented `--insecure-write-credentials` workaround is unreachable too under a
+Flatpak launcher: the launcher reads `settings.json` from its working directory, which inside the
+sandbox is ephemeral tmpfs with the real home unmounted. The development client takes arguments we
+control, so it passes that flag itself instead.
+
+**A development client starts empty.** Launched bare it uses `~/.runelite` and loads none of the 40
+installed Plugin Hub plugins, profiles or settings. Pointing `user.home` at the launcher's
+directory fixes it, at the cost of never running two clients at once.
+
 **Node 22 is required.** Wrangler 4.100+ dropped Node 20, and older Wrangler ships a `workerd`
 the Agents SDK cannot run on (`tracing.startActiveSpan is not a function`). Wrangler is pinned to
 4.104.0: 4.108+ wants `@cloudflare/workers-types@^5` while partyserver requires `^4`.
@@ -105,6 +156,9 @@ after a review:
 - **Untrusted content.** The wiki is publicly editable, so all wiki-derived output is fenced in
   `<untrusted-wiki-content>` with a trust banner and scanned for model-directed phrasings.
   Content is never silently rewritten.
+- **The one write surface.** `/ingest/items` sits outside the secret path with its own bearer
+  token, fails closed when `SYNC_TOKEN` is unset, caps bodies at 1 MiB and validates against a
+  schema before touching KV. A stolen token can overwrite item snapshots but cannot read them.
 
 Note for future rotations: **claude.ai caches a connector's tool list per URL.** After v2 shipped,
 Claude insisted the server had only four tools and that no account lookup existed — while the
@@ -116,7 +170,10 @@ metadata is obvious at a glance.
 
 - **TypeScript + Cloudflare Workers**, Agents SDK `McpAgent` for transport, Workers KV for
   caching, SQLite-backed Durable Objects for sessions. All within the free tier.
-- **Testing:** Vitest, 85 tests against committed real fixtures. The infobox parser was written
+- **Item sync:** a RuneLite plugin in Java, in its own public repo so it could be submitted to the
+  Plugin Hub. It stays there as the canonical copy even though the submission was declined.
+- **Testing:** Vitest, 144 tests against committed real fixtures, plus 5 JUnit tests pinning the
+  plugin's JSON against the Worker's schema. The infobox parser was written
   test-first. `npm run smoke` hits the live player APIs and is deliberately outside `npm test`,
   since it depends on third-party services and current account state.
 
@@ -144,3 +201,6 @@ Not planned, just noted:
 - Collection log and combat achievement detail (WikiSync returns both; only counts are surfaced)
 - A `get_diary_tasks` tool naming the specific incomplete tasks per tier
 - Skill calculators — "how many X to level Y" — from wiki calculator data
+- Bank value from `ge_price`, now that contents are known
+- "What can I make right now?" — cross-referencing recipes against the bank rather than checking
+  one item at a time
