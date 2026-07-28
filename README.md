@@ -28,8 +28,20 @@ instead of a confident guess.
 | `get_gains` | Wise Old Man | XP/KC gained over day, week, month or year |
 | `get_account_summary` | all three | Combined snapshot — call this first |
 
+**Item data** — from the [RuneLite plugin](runelite-item-sync/) in this repo:
+
+| Tool | Input | Returns |
+| --- | --- | --- |
+| `get_bank` | `search?`, `username?` | Matching bank items with quantities and snapshot age |
+| `get_equipment` | `username?` | Worn gear by slot, plus inventory |
+| `check_materials` | `items[]`, `username?` | Owned quantity of each named item across all containers |
+
 The player tools exist so an assistant stops asking "what's your Slayer level?" and stops
 trusting levels mentioned earlier in a conversation. Levels change while you play.
+
+The item tools close the last gap: `get_infobox` says a burning amulet needs a topaz amulet and a
+cosmic rune, and `check_materials` says whether you actually have them. No public API exposes bank
+contents, which is why a game-client plugin is involved at all.
 
 `get_infobox` is the one that matters:
 
@@ -57,6 +69,7 @@ nvm use && npm install
 npx wrangler kv namespace create WIKI_CACHE   # paste the id into wrangler.toml
 npx wrangler secret put MCP_SECRET_PATH       # paste a long random string
 npx wrangler secret put DEFAULT_PLAYER        # optional: your OSRS username
+npx wrangler secret put SYNC_TOKEN            # optional: enables the item-sync endpoint
 npx wrangler deploy
 ```
 
@@ -93,15 +106,48 @@ WOM measures gains by diffing snapshots, so a period containing fewer than two u
 zero — which means "nothing recorded", not "nothing trained". The tool says so explicitly instead
 of implying you were idle.
 
+## RuneLite item sync
+
+`get_bank`, `get_equipment` and `check_materials` read snapshots pushed by the plugin in
+[`runelite-item-sync/`](runelite-item-sync/). Until one arrives, all three return setup
+instructions rather than an error.
+
+Set `SYNC_TOKEN` as a Worker secret (above), build the plugin, and put the same token in its config
+alongside your `https://<worker>/ingest/items` URL. Full build and install steps are in the
+[plugin README](runelite-item-sync/README.md) — including why dropping a jar in
+`~/.runelite/plugins` does nothing, and why the Jagex Launcher blocks sideloading entirely.
+
+The endpoint is the only writable surface on this Worker:
+
+```
+POST /ingest/items          header: X-Sync-Token: <SYNC_TOKEN>
+{ "username": "...", "timestamp": "...", "containers": { "bank": [ {id, name, quantity} ], ... } }
+```
+
+With no `SYNC_TOKEN` configured it refuses every request with `503` rather than accepting anonymous
+writes. Wrong or missing tokens get `401`, compared in constant time.
+
+Snapshots are stored under `items:<username>:<container>` with no TTL — an expiring bank would make
+the tools go dark between sessions, and reporting an honest age is better than reporting nothing.
+Two guards sit in front of every write, because KV's free tier allows 1,000 writes/day across this
+and the wiki cache: a 5-second per-container throttle, and a content hash that skips rewriting an
+unchanged bank while still refreshing its freshness.
+
 ## Security
 
-It's a read-only proxy over public data with no credentials to leak, so the blast radius is
-small. What's actually in place:
+Almost all of it is a read-only proxy over public data with no credentials to leak, so the blast
+radius is small. The one exception is `/ingest/items`, which writes. What's actually in place:
 
 **Access.** Serving at `/mcp/<secret>` keeps the endpoint unguessable; any other path returns 404,
 and the comparison is length-independent so the secret can't be probed byte by byte. A native rate
 limiter (60 req/min per IP) caps quota burn if the URL ever leaks — it uses edge-local counters, so
 it costs no KV writes.
+
+**The write endpoint.** `/ingest/items` sits outside the secret path and carries its own bearer
+token, compared the same length-independent way and never echoed back in an error. It fails closed:
+with no `SYNC_TOKEN` set it refuses everything with `503` rather than defaulting to open. Bodies are
+capped at 1 MiB and validated against a schema before anything reaches KV, and the worst a stolen
+token buys is the ability to overwrite your own item snapshots — it cannot read them back.
 
 **Input.** Titles are capped at 255 bytes (MediaWiki's own limit), queries at 300. User input only
 ever reaches `URL.searchParams`, which encodes it — you cannot inject extra API parameters or
@@ -133,7 +179,7 @@ effects on the strength of these checks alone.
 
 ```bash
 npm run dev        # http://localhost:8787
-npm test           # 85 tests
+npm test           # 144 tests
 npm run typecheck
 npm run smoke      # hits the live player APIs — not part of npm test
 ```
@@ -173,7 +219,8 @@ claude.ai ──Streamable HTTP──▶ Worker (McpAgent) ──▶ KV cache �
                                                                   prices.runescape.wiki
 ```
 
-- `src/index.ts` — the `McpAgent` and all eight tool definitions
+- `src/index.ts` — the `McpAgent` and all eleven tool definitions
+- `src/ingest.ts` / `src/item-store.ts` / `src/items.ts` — the item-sync endpoint, KV layer and matching
 - `src/http-cache.ts` — KV-backed fetching shared by every upstream
 - `src/wiki.ts` — wiki and price fetching, item-name resolution
 - `src/infobox.ts` / `src/wikitext.ts` — the template parser and its scanners

@@ -21,4 +21,11 @@ export interface Env {
    * username and will use this account.
    */
   DEFAULT_PLAYER?: string;
+  /**
+   * Shared secret the RuneLite item-sync plugin presents as `X-Sync-Token`.
+   * Unset means item sync is disabled — `/ingest/items` refuses every request
+   * rather than accepting anonymous writes to KV.
+   * Set with `wrangler secret put SYNC_TOKEN`.
+   */
+  SYNC_TOKEN?: string;
 }

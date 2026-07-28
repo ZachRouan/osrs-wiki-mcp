@@ -5,5 +5,5 @@
   "compilerOptions": {
     "types": ["node"]
   },
-  "include": ["test/**/*.ts", "src/infobox.ts", "src/wikitext.ts", "src/untrusted.ts", "src/cache-key.ts", "src/hiscores.ts", "src/wikisync.ts", "src/wom.ts", "vitest.config.ts"]
+  "include": ["test/**/*.ts", "src/infobox.ts", "src/wikitext.ts", "src/untrusted.ts", "src/cache-key.ts", "src/hiscores.ts", "src/wikisync.ts", "src/wom.ts", "src/items.ts", "src/item-store.ts", "src/ingest.ts", "src/secure-compare.ts", "vitest.config.ts"]
 }

@@ -4,7 +4,18 @@ import { z } from "zod";
 
 import type { Env } from "./env";
 import { combatLevel, parseHiscores } from "./hiscores";
+import { handleIngest, INGEST_PATH } from "./ingest";
 import { parseInfoboxes } from "./infobox";
+import {
+  checkMaterials,
+  CONTAINERS,
+  describeAge,
+  searchItems,
+  topByQuantity,
+  totalQuantity,
+} from "./items";
+import { readAllContainers, readContainer, readSyncIndex } from "./item-store";
+import { secureEquals } from "./secure-compare";
 import {
   fetchHiscores,
   fetchWikiSync,
@@ -27,6 +38,19 @@ const WIKISYNC_HELP =
   "This account has never synced with WikiSync. To enable it: install the WikiSync plugin in " +
   "RuneLite (Plugin Hub), make sure it is enabled, then log into the game once. Quest and diary " +
   "data appears after that first login.";
+
+const ITEM_SYNC_HELP =
+  "No item snapshot has ever been received for this account. Bank, inventory and equipment " +
+  "contents are not available from any public API — they come from the runelite-item-sync " +
+  "plugin in this project, which pushes them from the game client. See the 'RuneLite item sync' " +
+  "section of the project README for build and sideload instructions. Once the plugin is " +
+  "installed and configured, open your bank in game to send the first snapshot.";
+
+/** An unfiltered bank is thousands of lines, so summarise instead. */
+const BANK_SUMMARY_LIMIT = 50;
+
+/** Enough for a full recipe's material list, with room to spare. */
+const MAX_MATERIALS_PER_CALL = 30;
 
 /**
  * MediaWiki titles cap at 255 bytes; anything longer cannot name a real page.
@@ -54,7 +78,7 @@ function formatTimestamp(seconds: number | null): string {
 }
 
 export class OsrsWikiMCP extends McpAgent<Env> {
-  server = new McpServer({ name: "osrs-wiki", version: "2.0.0" });
+  server = new McpServer({ name: "osrs-wiki", version: "3.0.0" });
 
   /**
    * Resolve the account to look at: the supplied name, else DEFAULT_PLAYER.
@@ -72,11 +96,12 @@ export class OsrsWikiMCP extends McpAgent<Env> {
   async init() {
     this.server.tool(
       "search_pages",
-      "[osrs-wiki v2] Search the Old School RuneScape Wiki and return the top 5 matching page " +
+      "[osrs-wiki v3] Search the Old School RuneScape Wiki and return the top 5 matching page " +
         "titles with a plain-text snippet each. Use this to find the exact page title before " +
         "calling get_page or get_infobox. Note: this server ALSO provides live player-account " +
-        "tools — get_player_stats, get_quest_progress, get_gains and get_account_summary — for " +
-        "looking up the user's real levels, quests and progress.",
+        "tools — get_player_stats, get_quest_progress, get_gains and get_account_summary for the " +
+        "user's real levels, quests and progress, and get_bank, get_equipment and " +
+        "check_materials for what they actually own.",
       {
         query: z
           .string()
@@ -428,6 +453,203 @@ export class OsrsWikiMCP extends McpAgent<Env> {
         return text(JSON.stringify(summary, null, 2));
       },
     );
+
+    this.server.tool(
+      "get_bank",
+      "Search the player's actual bank contents from the last RuneLite sync. ALWAYS use this to " +
+        "check whether the user owns an item, has materials for a recipe, or how many of " +
+        "something they have. Data may be minutes/hours old — report the snapshot age.",
+      {
+        search: z
+          .string()
+          .min(1)
+          .max(MAX_ITEM_LENGTH)
+          .optional()
+          .describe(
+            "Case-insensitive substring of an item name, e.g. 'topaz' or 'rune bar'. " +
+              "Strongly preferred — without it only a summary of the bank is returned.",
+          ),
+        username,
+      },
+      async ({ search, username: name }) => {
+        const player = this.resolvePlayer(name);
+        if (!player) return noPlayer;
+
+        try {
+          const snapshot = await readContainer(this.env.WIKI_CACHE, player, "bank");
+          if (!snapshot) return text(`No bank snapshot for "${player}". ${ITEM_SYNC_HELP}`);
+
+          const age = describeAge(snapshot.received_at, Date.now());
+
+          if (search) {
+            const matches = searchItems(snapshot.items, search);
+            return text(
+              JSON.stringify(
+                {
+                  username: player,
+                  container: "bank",
+                  snapshot_age: age,
+                  synced_at: snapshot.received_at,
+                  search,
+                  match_count: matches.length,
+                  matches,
+                  ...(matches.length === 0
+                    ? { note: `No bank item name contains "${search}".` }
+                    : {}),
+                },
+                null,
+                2,
+              ),
+            );
+          }
+
+          // No search term: a full dump would be thousands of lines, so return
+          // a summary and push the caller towards a filtered call.
+          return text(
+            JSON.stringify(
+              {
+                username: player,
+                container: "bank",
+                snapshot_age: age,
+                synced_at: snapshot.received_at,
+                distinct_items: snapshot.items.length,
+                total_quantity: totalQuantity(snapshot.items),
+                note:
+                  `Showing only the ${BANK_SUMMARY_LIMIT} largest stacks of ` +
+                  `${snapshot.items.length} distinct items. Call get_bank again with a search ` +
+                  `term to look up a specific item, or check_materials for several at once.`,
+                largest_stacks: topByQuantity(snapshot.items, BANK_SUMMARY_LIMIT),
+              },
+              null,
+              2,
+            ),
+          );
+        } catch (error) {
+          return text(`Could not read the bank snapshot for "${player}": ${describe(error)}`);
+        }
+      },
+    );
+
+    this.server.tool(
+      "get_equipment",
+      "Get the player's currently equipped gear and inventory from the last RuneLite sync. Use " +
+        "for loadout checks and 'what am I wearing' questions.",
+      { username },
+      async ({ username: name }) => {
+        const player = this.resolvePlayer(name);
+        if (!player) return noPlayer;
+
+        try {
+          const [equipment, inventory] = await Promise.all([
+            readContainer(this.env.WIKI_CACHE, player, "equipment"),
+            readContainer(this.env.WIKI_CACHE, player, "inventory"),
+          ]);
+
+          if (!equipment && !inventory) {
+            return text(`No equipment or inventory snapshot for "${player}". ${ITEM_SYNC_HELP}`);
+          }
+
+          const now = Date.now();
+          const worn: Record<string, { name: string; id: number; quantity: number }> = {};
+          for (const item of equipment?.items ?? []) {
+            worn[item.slot ?? "unknown"] = {
+              name: item.name,
+              id: item.id,
+              quantity: item.quantity,
+            };
+          }
+
+          return text(
+            JSON.stringify(
+              {
+                username: player,
+                equipment: equipment
+                  ? {
+                      snapshot_age: describeAge(equipment.received_at, now),
+                      synced_at: equipment.received_at,
+                      slots_filled: Object.keys(worn).length,
+                      worn,
+                    }
+                  : { note: "No equipment snapshot has been received." },
+                inventory: inventory
+                  ? {
+                      snapshot_age: describeAge(inventory.received_at, now),
+                      synced_at: inventory.received_at,
+                      slots_used: inventory.items.length,
+                      items: inventory.items,
+                    }
+                  : { note: "No inventory snapshot has been received." },
+              },
+              null,
+              2,
+            ),
+          );
+        } catch (error) {
+          return text(`Could not read the item snapshot for "${player}": ${describe(error)}`);
+        }
+      },
+    );
+
+    this.server.tool(
+      "check_materials",
+      "Check how many of each named item the player owns across bank, inventory and equipment. " +
+        "Use together with get_infobox Recipe data to verify the user can make an item BEFORE " +
+        "advising a furnace/crafting trip.",
+      {
+        items: z
+          .array(z.string().min(1).max(MAX_ITEM_LENGTH))
+          .min(1)
+          .max(MAX_MATERIALS_PER_CALL)
+          .describe(
+            "Exact item names to look for, e.g. ['Red topaz', 'Silver bar']. Use the mat1/mat2 " +
+              "values from a get_infobox Recipe template.",
+          ),
+        username,
+      },
+      async ({ items, username: name }) => {
+        const player = this.resolvePlayer(name);
+        if (!player) return noPlayer;
+
+        try {
+          const [containers, index] = await Promise.all([
+            readAllContainers(this.env.WIKI_CACHE, player),
+            readSyncIndex(this.env.WIKI_CACHE, player),
+          ]);
+
+          const present = CONTAINERS.filter((c) => containers[c] !== undefined);
+          if (present.length === 0) {
+            return text(`No item snapshot for "${player}". ${ITEM_SYNC_HELP}`);
+          }
+
+          const now = Date.now();
+          const results = checkMaterials(containers, items);
+
+          return text(
+            JSON.stringify(
+              {
+                username: player,
+                searched_containers: present,
+                snapshot_ages: Object.fromEntries(
+                  present.map((c) => [
+                    c,
+                    index?.containers[c]
+                      ? describeAge(index.containers[c]!.received_at, now)
+                      : "unknown age",
+                  ]),
+                ),
+                have_all: results.every((result) => result.have),
+                missing: results.filter((result) => !result.have).map((result) => result.item),
+                results,
+              },
+              null,
+              2,
+            ),
+          );
+        } catch (error) {
+          return text(`Could not read the item snapshot for "${player}": ${describe(error)}`);
+        }
+      },
+    );
   }
 }
 
@@ -438,17 +660,6 @@ function describe(error: unknown): string {
 }
 
 const mcpHandler = OsrsWikiMCP.serve("/mcp");
-
-/** Length-independent comparison, so the secret can't be probed byte by byte. */
-function secretPathMatches(actual: string, expected: string): boolean {
-  const a = new TextEncoder().encode(actual);
-  const b = new TextEncoder().encode(expected);
-  if (a.length !== b.length) return false;
-
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
-  return diff === 0;
-}
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
@@ -467,10 +678,16 @@ export default {
       }
     }
 
+    // The item-sync endpoint carries its own bearer secret, so it sits outside
+    // the MCP secret path rather than behind it.
+    if (url.pathname === INGEST_PATH) {
+      return handleIngest(request, { kv: env.WIKI_CACHE, token: env.SYNC_TOKEN });
+    }
+
     const secret = env.MCP_SECRET_PATH?.trim();
     if (secret) {
       // Serve only at /mcp/<secret>. Anything else looks like an empty host.
-      if (!secretPathMatches(url.pathname, `/mcp/${secret}`)) {
+      if (!secureEquals(url.pathname, `/mcp/${secret}`)) {
         return new Response("Not found", { status: 404 });
       }
       const rewritten = new URL(url);
