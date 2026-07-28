@@ -1,0 +1,46 @@
+{{External|rs=Topaz amulet (unstrung)}}
+{{Infobox Item
+|name = Topaz amulet (u)
+|image = [[File:Topaz amulet (u).png]]
+|release = [[2 February]] [[2017]]
+|update = Silver Jewellery, Tournament World & QoL!
+|aka = Unstrung (red) topaz amulet
+|members = Yes
+|quest = No
+|tradeable = Yes
+|equipable = No
+|stackable = No
+|noteable = Yes
+|options = Drop
+|examine = It needs a string so I can wear it.
+|value = 1275
+|weight = 0.004
+|exchange = Yes
+|id = 21105
+}}[[File:Topaz amulet (u) detail.png|left|140px]]
+A '''topaz amulet (u)''' is made with [[red topaz]], a [[silver bar]], and an [[amulet mould]] at a [[furnace]], requiring 45 [[Crafting]] and yielding 80 Crafting [[experience]]. 
+
+It can be used with a [[ball of wool]] to create a strung [[topaz amulet]], which can then be enchanted at level 49 [[Magic]] using the [[Lvl-3 Enchant]] spell to create a [[burning amulet]]. 
+
+==Creation==
+{{Recipe
+|skill1 = Crafting
+|skill1lvl = 45
+|skill1boostable = Yes
+|skill1exp = 80
+|members = Yes
+|ticks = 3
+|tools = Amulet mould
+|facilities = Furnace
+|mat1 = Red topaz
+|mat2 = Silver bar
+|output1 = Topaz amulet (u)
+}}
+==Products==
+{{Uses material list|Topaz amulet (u)}}
+
+==Item sources==
+{{Drop sources|Topaz amulet (u)}}
+
+{{Amulets}}
+{{Red topaz}}

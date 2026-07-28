@@ -1,0 +1,67 @@
+{{Confuse|steel key ring}}
+{{Infobox Item
+|name = Steel ring
+|image = [[File:Steel ring.png]]
+|release = [[25 June]] [[2025]]
+|update = Summer Sweep Up: Combat
+|members = Yes
+|quest = No
+|tradeable = Yes
+|equipable = Yes
+|stackable = No
+|noteable = Yes
+|options = Wear, Drop
+|examine = A very old enchanted ring.
+|value = 15000
+|weight = 3.000
+|exchange = Yes
+|id = 30895
+|leagueRegion = Misthalin
+}}
+[[File:Steel ring detail.png|130px|left]]
+The '''steel ring''' is an item dropped by the [[deranged archaeologist]]. It has no requirements to equip and is the best-in-slot melee defensive ring, surpassing the [[ring of suffering (i)]]. However, it has no [[Magic]] defence, [[Ranged]] defence, or [[Prayer]] bonuses.
+
+It may be a more useful option for players who cannot afford a ring of suffering, or require better melee tanking equipment for encounters where they won't be attacked with other styles like the [[Moons of Peril]]. Other rings that provide offensive bonuses will usually perform better, but the steel ring can be useful for earlier in account progression, as the deranged archaeologist has very low requirements to defeat.
+
+Unlike [[gold ring]]s, it cannot be made with the [[Crafting]] [[Skills|skill]] using a [[ring mould]] at a [[furnace]].
+
+==Combat stats==
+{{Infobox Bonuses
+|astab = 0
+|aslash = 0
+|acrush = 0
+|amagic = 0
+|arange = 0
+|dstab = +24
+|dslash = +24
+|dcrush = +24
+|dmagic = 0
+|drange = 0
+|str = 0
+|rstr = 0
+|mdmg = 0
+|prayer = 0
+|slot = ring
+}}
+
+==Item sources==
+{{Drop sources|Steel ring}}
+
+==Used in recommended equipment==
+{{Used in recommended equipment|Steel ring}}
+
+==Changes==
+{{Subject changes header}}
+{{Subject changes
+|date = 2 July 2025
+|update = Stackable Clues are here!
+|change = The crush defence has been corrected from +2 to +24.
+}}
+{{Subject changes footer}}
+
+==Trivia==
+* The steel ring is tied with the [[granite ring]] for the heaviest ring-slot item in the game.
+
+{{Rings}}
+{{Fossil Island}}
+[[Category:Collection log items]]

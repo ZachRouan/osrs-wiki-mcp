@@ -1,0 +1,81 @@
+{{Infobox Item
+|defver = 2
+|version1 = Drop
+|version2 = Item
+|name = Ensouled dragon head
+|image = [[File:Ensouled dragon head.png]]
+|release = [[7 January]] [[2016]]
+|update = Zeah: Great Kourend
+|members = Yes
+|quest = No
+|tradeable1 = No
+|tradeable2 = Yes
+|equipable = No
+|stackable = No
+|noteable1 = No
+|noteable2 = Yes
+|options = Drop
+|examine = The creature's soul is still in here. I could reanimate it with Master Reanimation.
+|value = 650
+|weight = 0.453
+|exchange1 = No
+|exchange2 = Yes
+|id1 = 13510
+|id2 = 13511
+}}
+[[File:Ensouled dragon head detail.png|left|150px]]
+An '''ensouled dragon head''' is an item which can be dropped by chromatic [[dragon (race)|dragons]]. It is used to gain [[Prayer]] experience by using the level 90 [[Magic]] spell [[Master Reanimation]] from the [[Arceuus spellbook]] using 4 [[Soul runes]], 2 [[Blood runes]], and 4 [[Nature runes]]. When a player reanimates an ensouled dragon head, a [[reanimated dragon]] will appear and grant 1,560 Prayer experience after being killed. The reanimated dragon breathes fire, so [[dragonfire]] protection or a safespot should be used.
+
+Ensouled heads can be reanimated anywhere as long as the head is on the ground within the 31x31 area centred on its initial drop location and has not been put into the [[bank]], [[trade]] screen, [[Grand Exchange]], or [[price checker]].{{CiteTwitter|author=Mod Ash|url=https://twitter.com/JagexAsh/status/1289279363532435461|date=31 July 2020|archiveurl=https://reldo.runescape.wiki/i/108987|archivedate=8 September 2021|quote=About 15 tiles from where the object was dropped.}}{{CiteTwitter|author=Mod Ash|url=https://twitter.com/JagexAsh/status/1269309943422877696|date=6 June 2020|archiveurl=https://reldo.runescape.wiki/i/109627|archivedate=8 September 2021|quote=There are two versions of those heads. The version obtained from the dragon can be reanimated in the same area that it was dropped. It's untradeable. If you try to put it in the trade screen or GE, it transforms to a tradeable version that can only reanimate at the Dark Altar.}} Otherwise, it must be taken to the [[Dark Altar]] in [[Arceuus]] to be reanimated.
+
+Using a [[knife]] on [[Kbd heads]] will return three ensouled dragon heads.
+
+[[Vorkath's head]] can be used in place of an ensouled dragon head for [[Master Reanimation]].
+
+Note: The [[dragon hunter lance]] '''does''' work on the [[Reanimated dragon]].{{CiteTwitter|author=Mod Ash|url=https://twitter.com/JagexAsh/status/1113746244986388480|date=4 April 2019|archiveurl=https://reldo.runescape.wiki/i/107852|archivedate=28 May 2020|quote=Should do, yes.}}
+
+==Cost to reanimate==
+{{Spell cost table
+|Rune1 = nature
+|Rune1num = 4
+|Rune2 = blood
+|Rune2num = 2
+|Rune3 = soul
+|Rune3num = 4
+}}
+
+==Creation==
+{{Recipe
+|members = yes
+|ticks = 
+|tools = Knife
+|mat1 = Kbd heads
+|mat1cost = No
+|mat1quantity = 1
+|output1 = Ensouled dragon head
+|output1quantity = 3
+}}
+
+==Item sources==
+{{Drop sources|Ensouled dragon head}}
+
+==Changes==
+{{Subject changes header}}
+{{Subject changes
+|date = 30 March 2022
+|update = Guardians of the Rift Improvements
+|change = Ensouled heads can now drop in instanced areas.
+}}
+{{Subject changes
+|date = 28 April 2021
+|update = Arceuus Spellbook Beta and A Kingdom Divided Preparation
+|change = The examine text was slightly changed; previously, it was ''"The creature's soul is still in here."''
+}}
+{{Subject changes footer}}
+
+==References==
+{{Reflist}}
+
+{{Ensouled heads}}
+
+[[Category:Ensouled heads]]

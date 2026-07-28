@@ -1,0 +1,149 @@
+{{Redirect|Wilderness amulet|the [[amulet]] that [[Bank note|notes]] drops when worn within the [[Revenant Caves]]|Amulet of avarice}}
+{{Infobox Item
+|defver = 5
+|version1 = (1)
+|version2 = (2)
+|version3 = (3)
+|version4 = (4)
+|version5 = (5)
+|name1 = Burning amulet(1)
+|name2 = Burning amulet(2)
+|name3 = Burning amulet(3)
+|name4 = Burning amulet(4)
+|name5 = Burning amulet(5)
+|image = [[File:Burning amulet.png]]
+|release = [[2 February]] [[2017]]
+|update = Silver Jewellery, Tournament World & QoL!
+|members = Yes
+|quest = No
+|tradeable = Yes
+|equipable = Yes
+|stackable = No
+|noteable = Yes
+|options = Wear, Rub, Drop
+|wornoptions = Chaos Temple, Bandit Camp, Lava Maze
+|examine = Useful teleports around the wilderness.
+|value = 1250
+|weight = 0.007
+|exchange1 = No
+|exchange2 = No
+|exchange3 = No
+|exchange4 = No
+|exchange5 = Yes
+|id1 = 21175
+|id2 = 21173
+|id3 = 21171
+|id4 = 21169
+|id5 = 21166
+}}
+[[File:Burning amulet detail.png|left|140px]]
+A '''burning amulet''' is a [[topaz amulet]] enchanted via the [[Lvl-3 Enchant]] spell.
+
+When rubbed, the amulet can teleport the player to various locations in the [[Wilderness]]; players will be given a warning before teleporting. After all five charges are used, the amulet will disintegrate.
+
+The burning amulet is one of the few pieces of [[Jewellery box space#Excluded%20Enchanted%20Jewellery%20that%20Teleports|enchantable jewellery that is not incorporated into the player-owned house]] meaning players must retain an amulet if they wish to utilise its features. 
+
+==Combat stats==
+{{Infobox Bonuses
+|version1 = (1)
+|version2 = (2)
+|version3 = (3)
+|version4 = (4)
+|version5 = (5)
+|astab = 0
+|aslash = 0
+|acrush = 0
+|amagic = 0
+|arange = 0
+|dstab = 0
+|dslash = 0
+|dcrush = 0
+|dmagic = 0
+|drange = 0
+|str = 0
+|rstr = 0
+|mdmg = 0
+|prayer = 0
+|slot = neck
+|image = [[File:Burning amulet equipped male.png|140px]]
+|altimage = [[File:Burning amulet equipped female.png|140px]]
+}}
+
+==Creation==
+{{Recipe
+|skill1 = Magic
+|skill1lvl = 49
+|skill1boostable = Yes
+|skill1exp = 59
+|members = Yes
+|ticks = 1
+|ticksnote = Manual casting is 3 ticks, auto-casting is 7 ticks
+|mat1 = Topaz amulet
+|mat2 = Cosmic rune
+|mat3 = Fire rune
+|mat3quantity = 5
+|output1 = Burning amulet(5)
+}}
+
+==Teleportation options==
+{{TeleportLocationTableHead}}
+{{TeleportLocationLine|name=[[Chaos Temple (Wilderness)|Chaos Temple]] <br> (level 15 Wilderness) |x=3234|y=3634}}
+{{TeleportLocationLine|name=[[Bandit Camp (Wilderness)|Bandit Camp]] <br> (level 17 Wilderness) |x=3038|y=3651|r=2}}
+{{TeleportLocationLine|name=[[Lava Maze]] <br> (level 41 Wilderness) |x=3028|y=3842|r=2}}
+{{TableBottom}}
+
+===Price per teleport===
+Because the high alchemy value is the same regardless of the number of charges, some of the cost of usage can be reclaimed by alching when one charge remains.
+
+{| class="wikitable align-center-1"
+! colspan="2" |Item
+!Amulet Cost
+!Cost Per Teleport
+!Cost if Alching<ref group="n">Assuming a [[staff of fire]] or variant is used.</ref>
+|-
+|{{plinkp|Burning amulet}}||Burning amulet(5)
+|{{Coins|{{GEP|Burning amulet(5)}}}}
+|{{Coins|(- {{GEP|Burning amulet(5)}}) / 5 round 0}}
+|{{Coins|(750 - ({{GEP|Burning amulet(5)}} + {{GEP|Nature rune}})) / 4 round 0}}
+|}
+<references group="n" />
+
+==Used in recommended equipment==
+{{Used in recommended equipment|Burning amulet}}
+
+==Changes==
+{{Subject changes header}}
+{{Subject changes
+|date = 31 August 2017
+|update = Fossil Island Kudos Display, the Champion's Cape, and much more.
+|change = Partially charged versions of the item could now be turned into bank placeholders.
+}}
+{{Subject changes 
+|date = 16 February 2017
+|update = Party Pete's Birthday Bash
+|change = The item's inventory sprite was rotated, so that unenchanted silver jewellery now has non-standard angles instead.
+}}
+{{Subject changes
+|date = 9 February 2017
+|update = Colourful Golems & Graphical Improvements
+|change = The "Rub" and "Use" options were switched so Use is now first.
+}}
+{{Subject changes footer}}
+
+===Gallery (historical)===
+{|style="text-align: center" cellpadding="15"
+|[[File:Burning amulet (v1) detail.png|center|300x150px]]
+|[[File:Burning amulet detail.png|center|300x150px]]
+|-
+|[[File:Burning amulet v1.png|center]]
+|[[File:Burning amulet.png|center]]
+|-
+|2 February 2017 –<br/>16 February 2017
+|16 February 2017 –<br/>present
+|}
+
+{{Amulets}}
+{{Red topaz}}
+{{Teleportation items}}
+
+[[Category:Items with charges]]

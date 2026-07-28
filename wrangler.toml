@@ -1,0 +1,23 @@
+name = "osrs-wiki-mcp"
+main = "src/index.ts"
+compatibility_date = "2026-01-28"
+compatibility_flags = ["nodejs_compat"]
+
+# McpAgent persists each MCP session in a Durable Object.
+[[durable_objects.bindings]]
+name = "MCP_OBJECT"
+class_name = "OsrsWikiMCP"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["OsrsWikiMCP"]
+
+# Upstream response cache. Create with:
+#   wrangler kv namespace create WIKI_CACHE
+# then paste the returned id below.
+[[kv_namespaces]]
+binding = "WIKI_CACHE"
+id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
+
+[observability]
+enabled = true

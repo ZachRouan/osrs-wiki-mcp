@@ -1,0 +1,76 @@
+{{External|rs}}
+{{Infobox Item
+|name = Dragon boots
+|image = [[File:Dragon boots.png]]
+|release = [[17 October]] [[2013]]
+|update = The God Wars Dungeon has been uncovered!
+|members = Yes
+|quest = No
+|tradeable = Yes
+|equipable = Yes
+|stackable = No
+|noteable = Yes
+|options = Wear, Drop
+|examine = These will protect my feet.
+|value = 20000
+|weight = 1.000
+|exchange = Yes
+|id = 11840
+|leagueRegion = Asgarnia,Wilderness
+}}
+[[File:Dragon boots detail.png|left|150px]]
+'''Dragon boots''' are [[melee]] footwear requiring 60 [[Defence]] to wear. Like most other [[Dragon equipment|dragon items]], they cannot be made using the [[Smithing]] skill.
+
+Dragon boots offer the third-highest [[strength bonus]] of any boots in the game, while also offering some of the best defensive stats available for the feet slot. Coupled with their affordable price, they are popular among players for all melee combat purposes, even after all other Dragon armour being used has been replaced.
+
+==Combat stats==
+{{Infobox Bonuses
+|astab = 0
+|aslash = 0
+|acrush = 0
+|amagic = -3
+|arange = -1
+|dstab = +16
+|dslash = +17
+|dcrush = +18
+|dmagic = 0
+|drange = 0
+|str = +4
+|rstr = 0
+|mdmg = 0
+|prayer = 0
+|slot = feet
+|image = [[File:Dragon boots equipped male.png|150px]]
+|altimage = [[File:Dragon boots equipped female.png|150px]]
+}}
+
+==Upgrades==
+Dragon boots can be upgraded with a [[primordial crystal]], obtained as a rare drop from [[Cerberus]], to create a pair of [[primordial boots]]. Doing so requires level 60 [[Runecraft]] and [[Magic]].
+
+Players can also cosmetically upgrade their dragon boots with either a [[dragon boots ornament kit]] to create the gold-trimmed [[dragon boots (g)]], or a [[Bounty hunter ornament kit]] to create the [[dragon boots (cr)]] Both changes are reversible, returning the boots and ornament kit to the player.
+
+==Products==
+{{Uses material list|Dragon boots}}
+
+==Treasure Trails==
+{{EmoteClueHeader}}
+{{EmoteClue|tier=elite|emote=Laugh|location=[[Fountain of Heroes]] under the [[Heroes' Guild]]<ref>Note that [[Primordial boots]] and [[Avernic treads]] can be used in place of dragon boots.</ref>|item1=Dragon boots|item2=splitbark legs|item3=rune longsword}}
+{{EmoteClueBottom}}
+
+<references />
+
+==Used in recommended equipment==
+{{Used in recommended equipment|Dragon boots}}
+
+==Item sources==
+{{Drop sources|Dragon boots}}
+
+==Trivia==
+* During development of the [[God Wars Dungeon]] in ''Old School RuneScape'', it was proposed that dragon boots be created by using a shard of dragon metal on [[rune boots]], rather than as a direct drop in its original 2007 iteration. As the [[Poll:Old School feature poll 9: God Wars & Banks|resulting poll]] only received 52.5% out of the 75% support required, it was made as a direct drop.
+
+{{Boots}}
+{{Dragon equipment}}
+{{Strength armour}}
+[[Category:Boots]]
+[[Category:Melee armour]]
+[[Category:Collection log items]]

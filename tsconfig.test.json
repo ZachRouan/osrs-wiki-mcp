@@ -1,0 +1,9 @@
+{
+  // Tests run on Node, so they get Node's globals instead of the Worker ones.
+  // Keeping the two apart stops Worker code from silently relying on Node APIs.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node"]
+  },
+  "include": ["test/**/*.ts", "src/infobox.ts", "src/wikitext.ts", "vitest.config.ts"]
+}
