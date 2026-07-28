@@ -3,12 +3,30 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
 import type { Env } from "./env";
+import { combatLevel, parseHiscores } from "./hiscores";
 import { parseInfoboxes } from "./infobox";
+import {
+  fetchHiscores,
+  fetchWikiSync,
+  fetchWomGains,
+  fetchWomPlayer,
+  trackWomPlayer,
+} from "./player-api";
 import { wrapUntrusted } from "./untrusted";
 import { getItemMapping, getLatestPrice, getWikitext, resolveItem, searchPages } from "./wiki";
+import { parseWikiSync } from "./wikisync";
 import { cleanPageWikitext, extractSection, truncateWithNotice } from "./wikitext";
+import { parseGains } from "./wom";
 
 export type { Env };
+
+/** OSRS display names are at most 12 characters. */
+const MAX_USERNAME_LENGTH = 12;
+
+const WIKISYNC_HELP =
+  "This account has never synced with WikiSync. To enable it: install the WikiSync plugin in " +
+  "RuneLite (Plugin Hub), make sure it is enabled, then log into the game once. Quest and diary " +
+  "data appears after that first login.";
 
 /**
  * MediaWiki titles cap at 255 bytes; anything longer cannot name a real page.
@@ -36,7 +54,20 @@ function formatTimestamp(seconds: number | null): string {
 }
 
 export class OsrsWikiMCP extends McpAgent<Env> {
-  server = new McpServer({ name: "osrs-wiki", version: "1.0.0" });
+  server = new McpServer({ name: "osrs-wiki", version: "2.0.0" });
+
+  /**
+   * Resolve the account to look at: the supplied name, else DEFAULT_PLAYER.
+   * Returns null when neither is available, so the caller can explain rather
+   * than query the hiscores for an empty string.
+   */
+  private resolvePlayer(username?: string): string | null {
+    const explicit = username?.trim();
+    if (explicit) return explicit;
+
+    const fallback = this.env.DEFAULT_PLAYER?.trim();
+    return fallback ? fallback : null;
+  }
 
   async init() {
     this.server.tool(
@@ -191,7 +222,217 @@ export class OsrsWikiMCP extends McpAgent<Env> {
         );
       },
     );
+    const username = z
+      .string()
+      .min(1)
+      .max(MAX_USERNAME_LENGTH)
+      .optional()
+      .describe("OSRS username. Omit to use the server's configured default player.");
+
+    const noPlayer = text(
+      "No username was given and no DEFAULT_PLAYER is configured on the server. " +
+        "Ask the user for their OSRS username, or set DEFAULT_PLAYER.",
+    );
+
+    this.server.tool(
+      "get_player_stats",
+      "Get a player's CURRENT skill levels, XP, and boss killcounts from official hiscores. " +
+        "Use this instead of asking the user their levels or trusting levels stated earlier in " +
+        "a conversation — they change as the user plays.",
+      { username },
+      async ({ username: name }) => {
+        const player = this.resolvePlayer(name);
+        if (!player) return noPlayer;
+
+        try {
+          const lookup = await fetchHiscores(this.env, player);
+          if (!lookup) {
+            return text(
+              `No hiscores entry for "${player}" on either the ironman or standard board. ` +
+                `Check the spelling — names are as displayed in game.`,
+            );
+          }
+
+          const parsed = parseHiscores(lookup.raw, player);
+          return text(
+            JSON.stringify(
+              {
+                username: parsed.name,
+                board: lookup.board,
+                combat_level: combatLevel(parsed.skills),
+                skills: parsed.skills,
+                bosses: parsed.bosses,
+                activities: parsed.activities,
+              },
+              null,
+              2,
+            ),
+          );
+        } catch (error) {
+          return text(`Could not reach the hiscores for "${player}": ${describe(error)}`);
+        }
+      },
+    );
+
+    this.server.tool(
+      "get_quest_progress",
+      "Get a player's actual quest completion states and achievement diary progress via " +
+        "WikiSync. Use before giving quest advice.",
+      { username },
+      async ({ username: name }) => {
+        const player = this.resolvePlayer(name);
+        if (!player) return noPlayer;
+
+        try {
+          const raw = await fetchWikiSync(this.env, player);
+          if (!raw) return text(`No WikiSync data for "${player}". ${WIKISYNC_HELP}`);
+
+          return text(JSON.stringify(parseWikiSync(raw, player), null, 2));
+        } catch (error) {
+          return text(`Could not reach WikiSync for "${player}": ${describe(error)}`);
+        }
+      },
+    );
+
+    this.server.tool(
+      "get_gains",
+      "Get a player's recent XP and boss KC gains from Wise Old Man over a chosen period. " +
+        "Use for questions about progress, what the user has been training, or how fast they " +
+        "are going.",
+      {
+        username,
+        period: z
+          .enum(["day", "week", "month", "year"])
+          .default("week")
+          .describe("Time window for the gains"),
+      },
+      async ({ username: name, period }) => {
+        const player = this.resolvePlayer(name);
+        if (!player) return noPlayer;
+
+        try {
+          let raw = await fetchWomGains(this.env, player, period);
+
+          // Wise Old Man only reports gains for accounts it already tracks, so
+          // register the player and try once more before giving up.
+          if (!raw) {
+            const tracked = await trackWomPlayer(player);
+            if (tracked) raw = await fetchWomGains(this.env, player, period);
+          }
+
+          if (!raw) {
+            return text(
+              `"${player}" is not tracked on Wise Old Man, and automatically adding them failed. ` +
+                `Add the account at https://wiseoldman.net/players/${encodeURIComponent(player)} ` +
+                `(or type "!update ${player}" in a WOM-enabled Discord), then try again.`,
+            );
+          }
+
+          return text(JSON.stringify(parseGains(raw, period), null, 2));
+        } catch (error) {
+          return text(`Could not reach Wise Old Man for "${player}": ${describe(error)}`);
+        }
+      },
+    );
+
+    this.server.tool(
+      "get_account_summary",
+      "Fetch a combined live snapshot of a player's account (stats + quests + diaries). " +
+        "Call this FIRST when giving any account-specific advice.",
+      { username },
+      async ({ username: name }) => {
+        const player = this.resolvePlayer(name);
+        if (!player) return noPlayer;
+
+        // Tolerate partial failure: a summary with stats but no quests is far
+        // more useful than an error because one upstream was down.
+        const [hiscores, wikisync, wom] = await Promise.allSettled([
+          fetchHiscores(this.env, player),
+          fetchWikiSync(this.env, player),
+          fetchWomPlayer(this.env, player),
+        ]);
+
+        const summary: Record<string, unknown> = { username: player };
+        const problems: string[] = [];
+
+        if (hiscores.status === "fulfilled" && hiscores.value) {
+          const parsed = parseHiscores(hiscores.value.raw, player);
+          const skill = (key: string) => parsed.skills[key]?.level ?? 1;
+
+          summary.board = hiscores.value.board;
+          summary.total_level = parsed.skills.overall?.level ?? null;
+          summary.total_xp = parsed.skills.overall?.xp ?? null;
+          summary.combat_level = combatLevel(parsed.skills);
+          summary.combat_skills = {
+            attack: skill("attack"),
+            strength: skill("strength"),
+            defence: skill("defence"),
+            hitpoints: skill("hitpoints"),
+            ranged: skill("ranged"),
+            magic: skill("magic"),
+            prayer: skill("prayer"),
+            slayer: skill("slayer"),
+          };
+          summary.top_bosses = Object.entries(parsed.bosses)
+            .sort(([, a], [, b]) => b - a)
+            .slice(0, 5)
+            .map(([boss, kc]) => ({ boss, kc }));
+          summary.clues_completed = parsed.activities["Clue Scrolls (all)"] ?? 0;
+          summary.collections_logged = parsed.activities["Collections Logged"] ?? 0;
+        } else {
+          problems.push(
+            hiscores.status === "rejected"
+              ? `hiscores unavailable (${describe(hiscores.reason)})`
+              : "no hiscores entry found for this name",
+          );
+        }
+
+        if (wikisync.status === "fulfilled" && wikisync.value) {
+          const quests = parseWikiSync(wikisync.value, player);
+          summary.synced_at = quests.synced_at;
+          summary.quests = {
+            completed: quests.quest_counts.completed,
+            in_progress: quests.quest_counts.in_progress,
+            not_started: quests.quest_counts.not_started,
+            notable_in_progress: quests.quests.in_progress.slice(0, 10),
+          };
+          summary.diaries = {
+            completed_tiers: quests.diary_counts.completed_tiers,
+            total_tiers: quests.diary_counts.total_tiers,
+            by_region: Object.fromEntries(
+              Object.entries(quests.diaries).map(([region, tiers]) => [
+                region,
+                Object.fromEntries(Object.entries(tiers).map(([t, v]) => [t, v.progress])),
+              ]),
+            ),
+          };
+          summary.combat_achievements = quests.combat_achievements;
+        } else {
+          problems.push(
+            wikisync.status === "rejected"
+              ? `WikiSync unavailable (${describe(wikisync.reason)})`
+              : `no WikiSync data — ${WIKISYNC_HELP}`,
+          );
+        }
+
+        if (wom.status === "fulfilled" && wom.value) {
+          summary.account_type = wom.value.type ?? null;
+          summary.ehp = wom.value.ehp ?? null;
+          summary.ehb = wom.value.ehb ?? null;
+        }
+
+        if (problems.length > 0) summary.partial_results = problems;
+
+        return text(JSON.stringify(summary, null, 2));
+      },
+    );
   }
+}
+
+/** Error text safe to hand back to the model — never a stack trace. */
+function describe(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return String(error);
 }
 
 const mcpHandler = OsrsWikiMCP.serve("/mcp");

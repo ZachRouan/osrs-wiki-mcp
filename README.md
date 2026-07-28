@@ -10,12 +10,26 @@ instead of a confident guess.
 
 ## Tools
 
+**Wiki data:**
+
 | Tool | Input | Returns |
 | --- | --- | --- |
 | `search_pages` | `query` | Top 5 titles with plain-text snippets |
 | `get_page` | `title`, `section?` | Cleaned page text, capped at 12,000 chars |
 | `get_infobox` | `title` | Infobox + recipe templates as JSON |
 | `ge_price` | `item` | Latest GE high/low price with timestamps |
+
+**Player data** — all take an optional `username`, falling back to `DEFAULT_PLAYER`:
+
+| Tool | Source | Returns |
+| --- | --- | --- |
+| `get_player_stats` | Jagex hiscores | Live levels, XP, combat level, boss KC |
+| `get_quest_progress` | WikiSync | Quest states and diary progress |
+| `get_gains` | Wise Old Man | XP/KC gained over day, week, month or year |
+| `get_account_summary` | all three | Combined snapshot — call this first |
+
+The player tools exist so an assistant stops asking "what's your Slayer level?" and stops
+trusting levels mentioned earlier in a conversation. Levels change while you play.
 
 `get_infobox` is the one that matters:
 
@@ -42,6 +56,7 @@ Needs **Node 22+** (`.nvmrc` included) and a Cloudflare account. Free tier is fi
 nvm use && npm install
 npx wrangler kv namespace create WIKI_CACHE   # paste the id into wrangler.toml
 npx wrangler secret put MCP_SECRET_PATH       # paste a long random string
+npx wrangler secret put DEFAULT_PLAYER        # optional: your OSRS username
 npx wrangler deploy
 ```
 
@@ -58,6 +73,25 @@ https://osrs-wiki-mcp.<your-subdomain>.workers.dev/mcp/<your-secret>
 
 Save, then enable it in a chat or Project. Transport is Streamable HTTP, which is what custom
 connectors require.
+
+## Player data prerequisites
+
+**`DEFAULT_PLAYER`** makes `username` optional on all four player tools, so you can ask "what
+should I train next?" without naming your account every time. Set it as a secret (above), or as a
+plain `[vars]` entry in `wrangler.toml` if you don't mind it being in the repo.
+
+**WikiSync** (`get_quest_progress`) needs the RuneLite plugin: **Plugin Hub → WikiSync → enable →
+log in once**. Quest and diary data only exists after that first synced login. Accounts that have
+never synced get a message explaining this rather than an error. Note the service answers `HTTP
+400` with `{"code":"NO_USER_DATA"}` for an unsynced player, not a 404.
+
+**Wise Old Man** (`get_gains`) only knows accounts it already tracks. Untracked players are
+registered automatically on first use and the request is retried once; if that fails you get a
+link to add the account manually.
+
+WOM measures gains by diffing snapshots, so a period containing fewer than two updates reports
+zero — which means "nothing recorded", not "nothing trained". The tool says so explicitly instead
+of implying you were idle.
 
 ## Security
 
@@ -99,9 +133,14 @@ effects on the strength of these checks alone.
 
 ```bash
 npm run dev        # http://localhost:8787
-npm test           # 51 tests
+npm test           # 85 tests
 npm run typecheck
+npm run smoke      # hits the live player APIs — not part of npm test
 ```
+
+`npm run smoke [username]` pretty-prints real responses from the hiscores, WikiSync and Wise Old
+Man. It's excluded from the test suite on purpose: it depends on third-party services and on an
+account's current state, so it would fail for reasons that have nothing to do with this code.
 
 Set `MCP_SECRET_PATH` in a `.dev.vars` file to exercise the secret path locally (it's gitignored).
 Without it, `wrangler dev` serves the plain `/mcp` path.
@@ -134,13 +173,24 @@ claude.ai ──Streamable HTTP──▶ Worker (McpAgent) ──▶ KV cache �
                                                                   prices.runescape.wiki
 ```
 
-- `src/index.ts` — the `McpAgent` and four tool definitions
-- `src/wiki.ts` — cached fetching, item-name resolution
-- `src/infobox.ts` — the template parser
-- `src/wikitext.ts` — nesting-aware scanners, markup cleanup, section extraction
+- `src/index.ts` — the `McpAgent` and all eight tool definitions
+- `src/http-cache.ts` — KV-backed fetching shared by every upstream
+- `src/wiki.ts` — wiki and price fetching, item-name resolution
+- `src/infobox.ts` / `src/wikitext.ts` — the template parser and its scanners
+- `src/player-api.ts` — hiscores, WikiSync and Wise Old Man clients
+- `src/hiscores.ts` / `src/wikisync.ts` / `src/wom.ts` — pure mappers for each player API
 
 Cache keys are the upstream URL with query params sorted, so ordering never splits the cache.
-Wiki and price responses live 1 hour; the item id mapping, 24 hours.
+Wiki and price responses live 1 hour; the item id mapping 24 hours; player data only 5 minutes,
+since it changes while you play.
+
+The hiscores are checked on the ironman board first and the standard board second, and the answer
+says which one replied. A missing account returns 404 with an **HTML** error page, so the status
+decides the outcome — the body is not parseable.
+
+Boss killcounts are separated from other activities by name. The hiscores mix ratings into the
+same list, and `PvP Arena - Rank 2289` means rank 2289, not 2289 kills — reporting that as a boss
+would have an assistant invent a killcount.
 
 ### Gotchas
 

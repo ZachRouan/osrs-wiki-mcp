@@ -1,9 +1,8 @@
-import { buildCacheKey, normalizeUrl } from "./cache-key";
 import type { Env } from "./env";
+import { cachedFetchJson, USER_AGENT } from "./http-cache";
 import { stripHtml } from "./wikitext";
 
-/** The wiki blocks anonymous user agents — every upstream request must carry this. */
-export const USER_AGENT = "osrs-mcp/1.0 (personal project)";
+export { USER_AGENT };
 
 const WIKI_API = "https://oldschool.runescape.wiki/api.php";
 const PRICES_API = "https://prices.runescape.wiki/api/v1/osrs";
@@ -12,26 +11,11 @@ export const CACHE_TTL_SECONDS = 3600;
 /** The item id mapping is effectively static; keep it for a day. */
 export const MAPPING_TTL_SECONDS = 86_400;
 
-async function cachedFetchJson<T>(env: Env, url: string, ttl: number = CACHE_TTL_SECONDS): Promise<T> {
-  const requestUrl = normalizeUrl(url);
-  // Long titles would otherwise blow past the 512-byte KV key limit.
-  const key = await buildCacheKey(requestUrl);
-
-  const cached = await env.WIKI_CACHE.get(key, "text");
-  if (cached !== null) return JSON.parse(cached) as T;
-
-  const response = await fetch(requestUrl, {
-    headers: { "User-Agent": USER_AGENT, Accept: "application/json" },
-  });
-  if (!response.ok) {
-    throw new Error(
-      `Upstream request failed (${response.status} ${response.statusText}): ${requestUrl}`,
-    );
-  }
-
-  const body = await response.text();
-  await env.WIKI_CACHE.put(key, body, { expirationTtl: ttl });
-  return JSON.parse(body) as T;
+/** Wiki responses always exist; a null here means an upstream failure. */
+async function fetchWikiJson<T>(env: Env, url: string, ttl: number = CACHE_TTL_SECONDS): Promise<T> {
+  const result = await cachedFetchJson<T>(env, url, { ttl });
+  if (result === null) throw new Error("Upstream returned no data");
+  return result;
 }
 
 function wikiApiUrl(params: Record<string, string>): string {
@@ -58,7 +42,7 @@ export async function searchPages(env: Env, query: string, limit = 5): Promise<S
     format: "json",
     formatversion: "2",
   });
-  const data = await cachedFetchJson<SearchResponse>(env, url);
+  const data = await fetchWikiJson<SearchResponse>(env, url);
   return (data.query?.search ?? []).map((hit) => ({
     title: hit.title,
     snippet: stripHtml(hit.snippet ?? ""),
@@ -92,7 +76,7 @@ export async function getWikitext(env: Env, title: string): Promise<PageWikitext
     format: "json",
     formatversion: "2",
   });
-  const data = await cachedFetchJson<RevisionsResponse>(env, url);
+  const data = await fetchWikiJson<RevisionsResponse>(env, url);
   const page = data.query?.pages?.[0];
   if (!page || page.missing) return null;
 
@@ -109,7 +93,7 @@ export interface MappingEntry {
 }
 
 export async function getItemMapping(env: Env): Promise<MappingEntry[]> {
-  return cachedFetchJson<MappingEntry[]>(env, `${PRICES_API}/mapping`, MAPPING_TTL_SECONDS);
+  return fetchWikiJson<MappingEntry[]>(env, `${PRICES_API}/mapping`, MAPPING_TTL_SECONDS);
 }
 
 export interface LatestPrice {
@@ -124,7 +108,7 @@ interface LatestResponse {
 }
 
 export async function getLatestPrice(env: Env, itemId: number): Promise<LatestPrice | null> {
-  const data = await cachedFetchJson<LatestResponse>(env, `${PRICES_API}/latest?id=${itemId}`);
+  const data = await fetchWikiJson<LatestResponse>(env, `${PRICES_API}/latest?id=${itemId}`);
   return data.data?.[String(itemId)] ?? null;
 }
 

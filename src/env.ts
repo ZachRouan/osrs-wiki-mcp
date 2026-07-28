@@ -16,4 +16,9 @@ export interface Env {
    * Set with `wrangler secret put MCP_SECRET_PATH` — never commit it.
    */
   MCP_SECRET_PATH?: string;
+  /**
+   * Optional OSRS username. When set, the player tools may be called without a
+   * username and will use this account.
+   */
+  DEFAULT_PLAYER?: string;
 }
