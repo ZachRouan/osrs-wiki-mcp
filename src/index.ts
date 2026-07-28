@@ -4,10 +4,19 @@ import { z } from "zod";
 
 import type { Env } from "./env";
 import { parseInfoboxes } from "./infobox";
+import { wrapUntrusted } from "./untrusted";
 import { getItemMapping, getLatestPrice, getWikitext, resolveItem, searchPages } from "./wiki";
 import { cleanPageWikitext, extractSection, truncateWithNotice } from "./wikitext";
 
 export type { Env };
+
+/**
+ * MediaWiki titles cap at 255 bytes; anything longer cannot name a real page.
+ * Bounding these at the tool boundary keeps absurd input from reaching KV.
+ */
+const MAX_TITLE_LENGTH = 255;
+const MAX_QUERY_LENGTH = 300;
+const MAX_ITEM_LENGTH = 100;
 
 function text(body: string) {
   return { content: [{ type: "text" as const, text: body }] };
@@ -35,11 +44,17 @@ export class OsrsWikiMCP extends McpAgent<Env> {
       "Search the Old School RuneScape Wiki and return the top 5 matching page titles with a " +
         "plain-text snippet each. Use this to find the exact page title before calling get_page " +
         "or get_infobox.",
-      { query: z.string().describe("Search terms, e.g. 'burning amulet' or 'dragon slayer'") },
+      {
+        query: z
+          .string()
+          .min(1)
+          .max(MAX_QUERY_LENGTH)
+          .describe("Search terms, e.g. 'burning amulet' or 'dragon slayer'"),
+      },
       async ({ query }) => {
         const hits = await searchPages(this.env, query, 5);
         if (hits.length === 0) return text(`No wiki pages matched "${query}".`);
-        return text(formatHits(hits));
+        return text(wrapUntrusted(`search results for "${query}"`, formatHits(hits)));
       },
     );
 
@@ -50,9 +65,14 @@ export class OsrsWikiMCP extends McpAgent<Env> {
         "recipes, stats and requirements prefer get_infobox, which returns exact structured " +
         "fields instead of prose.",
       {
-        title: z.string().describe("Exact page title, e.g. 'Dragon Slayer II'"),
+        title: z
+          .string()
+          .min(1)
+          .max(MAX_TITLE_LENGTH)
+          .describe("Exact page title, e.g. 'Dragon Slayer II'"),
         section: z
           .string()
+          .max(MAX_TITLE_LENGTH)
           .optional()
           .describe("Optional section heading to return on its own, e.g. 'Creation' or 'Rewards'"),
       },
@@ -81,8 +101,10 @@ export class OsrsWikiMCP extends McpAgent<Env> {
           body = extracted;
         }
 
-        const header = section ? `# ${page.title} — ${section}\n\n` : `# ${page.title}\n\n`;
-        return text(truncateWithNotice(header + cleanPageWikitext(body)));
+        // Truncate before wrapping so the closing marker is never cut off.
+        const cleaned = truncateWithNotice(cleanPageWikitext(body));
+        const label = section ? `${page.title} — ${section}` : page.title;
+        return text(wrapUntrusted(label, cleaned));
       },
     );
 
@@ -94,7 +116,13 @@ export class OsrsWikiMCP extends McpAgent<Env> {
         "from memory. Returns the parsed template fields, including Recipe templates (materials " +
         "as mat1/mat2/..., skill requirements as skill1/skill1lvl) and a versions array for " +
         "items with multiple variants such as charge levels.",
-      { title: z.string().describe("Exact page title, e.g. 'Burning amulet'") },
+      {
+        title: z
+          .string()
+          .min(1)
+          .max(MAX_TITLE_LENGTH)
+          .describe("Exact page title, e.g. 'Burning amulet'"),
+      },
       async ({ title }) => {
         const page = await getWikitext(this.env, title);
 
@@ -117,7 +145,9 @@ export class OsrsWikiMCP extends McpAgent<Env> {
           );
         }
 
-        return text(JSON.stringify({ title: page.title, ...parsed }, null, 2));
+        return text(
+          wrapUntrusted(page.title, JSON.stringify({ title: page.title, ...parsed }, null, 2)),
+        );
       },
     );
 
@@ -126,7 +156,13 @@ export class OsrsWikiMCP extends McpAgent<Env> {
       "Get the latest Grand Exchange price for a tradeable Old School RuneScape item, resolved " +
         "by item name. Returns the most recent high (buy) and low (sell) prices with their " +
         "timestamps. Use this for current prices; do not answer price questions from memory.",
-      { item: z.string().describe("Item name, e.g. 'Dragon boots' or 'Abyssal whip'") },
+      {
+        item: z
+          .string()
+          .min(1)
+          .max(MAX_ITEM_LENGTH)
+          .describe("Item name, e.g. 'Dragon boots' or 'Abyssal whip'"),
+      },
       async ({ item }) => {
         const mapping = await getItemMapping(this.env);
         const match = resolveItem(mapping, item);
@@ -158,4 +194,47 @@ export class OsrsWikiMCP extends McpAgent<Env> {
   }
 }
 
-export default OsrsWikiMCP.serve("/mcp");
+const mcpHandler = OsrsWikiMCP.serve("/mcp");
+
+/** Length-independent comparison, so the secret can't be probed byte by byte. */
+function secretPathMatches(actual: string, expected: string): boolean {
+  const a = new TextEncoder().encode(actual);
+  const b = new TextEncoder().encode(expected);
+  if (a.length !== b.length) return false;
+
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
+  return diff === 0;
+}
+
+export default {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    const url = new URL(request.url);
+
+    // Cheap counters held at the edge — no KV writes, so the daily write budget
+    // stays available for the cache itself.
+    if (env.MCP_RATE_LIMITER) {
+      const client = request.headers.get("CF-Connecting-IP") ?? "unknown";
+      const { success } = await env.MCP_RATE_LIMITER.limit({ key: client });
+      if (!success) {
+        return new Response("Rate limit exceeded. Try again shortly.", {
+          status: 429,
+          headers: { "Retry-After": "60" },
+        });
+      }
+    }
+
+    const secret = env.MCP_SECRET_PATH?.trim();
+    if (secret) {
+      // Serve only at /mcp/<secret>. Anything else looks like an empty host.
+      if (!secretPathMatches(url.pathname, `/mcp/${secret}`)) {
+        return new Response("Not found", { status: 404 });
+      }
+      const rewritten = new URL(url);
+      rewritten.pathname = "/mcp";
+      return mcpHandler.fetch(new Request(rewritten, request), env, ctx);
+    }
+
+    return mcpHandler.fetch(request, env, ctx);
+  },
+};

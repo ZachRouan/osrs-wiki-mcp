@@ -5,5 +5,5 @@
   "compilerOptions": {
     "types": ["node"]
   },
-  "include": ["test/**/*.ts", "src/infobox.ts", "src/wikitext.ts", "vitest.config.ts"]
+  "include": ["test/**/*.ts", "src/infobox.ts", "src/wikitext.ts", "src/untrusted.ts", "src/cache-key.ts", "vitest.config.ts"]
 }

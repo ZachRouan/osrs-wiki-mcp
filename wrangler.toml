@@ -19,5 +19,11 @@ new_sqlite_classes = ["OsrsWikiMCP"]
 binding = "WIKI_CACHE"
 id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
 
+# Per-client request limiter. Edge-local counters, so this costs no KV writes.
+[[ratelimits]]
+name = "MCP_RATE_LIMITER"
+namespace_id = "1001"
+simple = { limit = 60, period = 60 }
+
 [observability]
 enabled = true

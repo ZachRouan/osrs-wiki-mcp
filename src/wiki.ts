@@ -1,3 +1,4 @@
+import { buildCacheKey, normalizeUrl } from "./cache-key";
 import type { Env } from "./env";
 import { stripHtml } from "./wikitext";
 
@@ -11,24 +12,21 @@ export const CACHE_TTL_SECONDS = 3600;
 /** The item id mapping is effectively static; keep it for a day. */
 export const MAPPING_TTL_SECONDS = 86_400;
 
-/** Cache key: the request URL with query parameters sorted, so key order never splits the cache. */
-function normalizeUrl(url: string): string {
-  const parsed = new URL(url);
-  parsed.searchParams.sort();
-  return parsed.toString();
-}
-
 async function cachedFetchJson<T>(env: Env, url: string, ttl: number = CACHE_TTL_SECONDS): Promise<T> {
-  const key = normalizeUrl(url);
+  const requestUrl = normalizeUrl(url);
+  // Long titles would otherwise blow past the 512-byte KV key limit.
+  const key = await buildCacheKey(requestUrl);
 
   const cached = await env.WIKI_CACHE.get(key, "text");
   if (cached !== null) return JSON.parse(cached) as T;
 
-  const response = await fetch(key, {
+  const response = await fetch(requestUrl, {
     headers: { "User-Agent": USER_AGENT, Accept: "application/json" },
   });
   if (!response.ok) {
-    throw new Error(`Upstream request failed (${response.status} ${response.statusText}): ${key}`);
+    throw new Error(
+      `Upstream request failed (${response.status} ${response.statusText}): ${requestUrl}`,
+    );
   }
 
   const body = await response.text();
