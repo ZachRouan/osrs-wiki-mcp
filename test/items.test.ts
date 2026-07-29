@@ -10,7 +10,9 @@ import {
   ingestPayloadSchema,
   type ItemStack,
   lastSyncKey,
+  MAX_ITEM_LIST_CHARS,
   normalizeUsername,
+  renderItemLines,
   searchItems,
   topByQuantity,
   totalQuantity,
@@ -215,6 +217,82 @@ describe("bank summarising", () => {
   it("counts total quantity across every stack", () => {
     expect(totalQuantity(bank)).toBe(bank.reduce((s, i) => s + i.quantity, 0));
     expect(totalQuantity([])).toBe(0);
+  });
+});
+
+describe("renderItemLines", () => {
+  it("renders every stack as one 'Name xQuantity' line, largest first", () => {
+    const rendered = renderItemLines(bank);
+    const lines = rendered.text.split("\n");
+
+    expect(rendered.shown).toBe(bank.length);
+    expect(rendered.dropped).toBe(0);
+    expect(lines).toHaveLength(bank.length);
+
+    const largest = [...bank].sort((a, b) => b.quantity - a.quantity)[0];
+    expect(lines[0]).toBe(`${largest.name} x${largest.quantity}`);
+
+    const quantities = lines.map((l) => Number(l.slice(l.lastIndexOf(" x") + 2)));
+    expect([...quantities].sort((a, b) => b - a)).toEqual(quantities);
+  });
+
+  it("does not mutate the source array", () => {
+    const before = bank.map((i) => i.id);
+    renderItemLines(bank);
+    expect(bank.map((i) => i.id)).toEqual(before);
+  });
+
+  it("omits item ids, since every consuming tool resolves by name", () => {
+    // Silver bar is id 2355, quantity 62 — the id shares no digits with the
+    // rendered line, so a leak would be unmistakable.
+    const silver = bank.find((i) => i.name === "Silver bar");
+    expect(silver).toEqual({ id: 2355, name: "Silver bar", quantity: 62 });
+
+    const line = renderItemLines(bank)
+      .text.split("\n")
+      .find((l) => l.startsWith("Silver bar x"));
+    expect(line).toBe("Silver bar x62");
+    expect(line).not.toContain("2355");
+  });
+
+  it("stays within the character budget and reports what it dropped", () => {
+    const rendered = renderItemLines(bank, 200);
+
+    expect(rendered.text.length).toBeLessThanOrEqual(200);
+    expect(rendered.shown).toBeGreaterThan(0);
+    expect(rendered.shown).toBeLessThan(bank.length);
+    expect(rendered.shown + rendered.dropped).toBe(bank.length);
+    // Truncation must land on a line boundary, never mid-name.
+    expect(rendered.text.endsWith("\n")).toBe(false);
+    for (const line of rendered.text.split("\n")) {
+      expect(line).toMatch(/ x\d+$/);
+    }
+  });
+
+  it("drops the smallest stacks first, keeping the valuable tail", () => {
+    const rendered = renderItemLines(bank, 200);
+    const kept = new Set(rendered.text.split("\n").map((l) => l.slice(0, l.lastIndexOf(" x"))));
+    const sorted = [...bank].sort((a, b) => b.quantity - a.quantity);
+
+    // Everything kept outranks everything dropped.
+    for (const [index, item] of sorted.entries()) {
+      expect(kept.has(item.name)).toBe(index < rendered.shown);
+    }
+  });
+
+  it("handles an empty container without emitting a stray line", () => {
+    expect(renderItemLines([])).toEqual({ text: "", shown: 0, dropped: 0 });
+  });
+
+  it("fits a realistic bank well inside the default budget", () => {
+    const rendered = renderItemLines(bank);
+    expect(rendered.dropped).toBe(0);
+    expect(rendered.text.length).toBeLessThan(MAX_ITEM_LIST_CHARS);
+  });
+
+  it("is far cheaper than the equivalent JSON objects", () => {
+    const asJson = JSON.stringify(bank, null, 2);
+    expect(renderItemLines(bank).text.length * 3).toBeLessThan(asJson.length);
   });
 });
 

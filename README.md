@@ -32,7 +32,7 @@ instead of a confident guess.
 
 | Tool | Input | Returns |
 | --- | --- | --- |
-| `get_bank` | `search?`, `username?` | Matching bank items with quantities and snapshot age |
+| `get_bank` | `search?`, `full?`, `username?` | Matching bank items with quantities and snapshot age; `full` lists the whole bank |
 | `get_equipment` | `username?` | Worn gear by slot, plus inventory |
 | `check_materials` | `items[]`, `username?` | Owned quantity of each named item across all containers |
 
@@ -113,6 +113,14 @@ of implying you were idle.
 own public repo so the Plugin Hub can build it. Until a snapshot arrives, all three return setup
 instructions rather than an error.
 
+`get_bank` answers three ways. With `search` it returns matching stacks as JSON; with neither
+argument it returns a 50-stack summary; with `full` it lists every stack as `Name xQuantity` lines,
+largest first. The line format exists because it is roughly four times cheaper than the equivalent
+JSON objects — a 677-item bank costs about 3,400 tokens instead of 14,500 — which is what makes
+asking for a whole bank practical. Item ids are omitted from that listing, since `ge_price`,
+`check_materials` and `get_infobox` all resolve by name. The listing is capped at 60,000 characters
+and reports how many of the smallest stacks it dropped.
+
 Set `SYNC_TOKEN` as a Worker secret (above), build the plugin, and put the same token in its config
 alongside your `https://<worker>/ingest/items` URL. Full build and install steps are in the
 [plugin README](https://github.com/ZachRouan/runelite-item-sync). Local development helpers,
@@ -181,7 +189,7 @@ effects on the strength of these checks alone.
 
 ```bash
 npm run dev        # http://localhost:8787
-npm test           # 144 tests
+npm test           # 152 tests
 npm run typecheck
 npm run smoke      # hits the live player APIs — not part of npm test
 ```

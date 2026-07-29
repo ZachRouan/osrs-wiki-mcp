@@ -60,7 +60,7 @@ since no public API exposes container contents
 
 | Tool | Input | Output |
 |---|---|---|
-| `get_bank` | `search?` | matching items with quantities, or a summary when unfiltered |
+| `get_bank` | `search?`, `full?` | matching items with quantities, a summary when unfiltered, or every stack as lines when `full` |
 | `get_equipment` | — | worn gear by slot, plus inventory |
 | `check_materials` | `items[]` | owned quantity of each, across all containers |
 
@@ -108,6 +108,15 @@ copied out of the event immediately.
 *Topaz amulet*. A substring match would have reported the burning amulet recipe as satisfied and
 sent the player to enchant an amulet they do not own. Near-misses are surfaced separately under
 `similar`, never counted.
+
+**A whole bank was never too big — the format was.** The plan capped the unfiltered `get_bank` at
+the 50 largest stacks on the assumption that a full dump was unaffordable. Measured against 500
+real item names, the cost is almost entirely JSON scaffolding and item ids: objects with ids run
+85.5 bytes per stack, plain `Name xQuantity` lines run 20.2. That is a 677-item bank at ~3,400
+tokens instead of ~14,500, so `full` returns lines and drops the ids — every tool that consumes
+these names (`ge_price`, `check_materials`, `get_infobox`) resolves by name anyway. The 12,000-char
+prose limit would have cut a real bank in half, so this path carries its own 60,000-char cap and
+reports what it dropped.
 
 **The GE mapping is tradeables-only.** Coins, Fire cape, Dragon defender and Barrows gloves have no
 entry, but RuneLite reports them — anything assuming the mapping covers every item silently loses
@@ -172,7 +181,7 @@ metadata is obvious at a glance.
   caching, SQLite-backed Durable Objects for sessions. All within the free tier.
 - **Item sync:** a RuneLite plugin in Java, in its own public repo so it could be submitted to the
   Plugin Hub. It stays there as the canonical copy even though the submission was declined.
-- **Testing:** Vitest, 144 tests against committed real fixtures, plus 5 JUnit tests pinning the
+- **Testing:** Vitest, 152 tests against committed real fixtures, plus 5 JUnit tests pinning the
   plugin's JSON against the Worker's schema. The infobox parser was written
   test-first. `npm run smoke` hits the live player APIs and is deliberately outside `npm test`,
   since it depends on third-party services and current account state.

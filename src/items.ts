@@ -133,6 +133,55 @@ export function totalQuantity(items: ItemStack[]): number {
   return items.reduce((sum, item) => sum + item.quantity, 0);
 }
 
+/**
+ * Ceiling on a rendered item list. The 12,000-character limit used for wiki
+ * prose would cut a real bank off around halfway, but `MAX_ITEMS_PER_CONTAINER`
+ * allows far more than any bank holds, so some bound is still needed.
+ */
+export const MAX_ITEM_LIST_CHARS = 60_000;
+
+export interface RenderedItems {
+  text: string;
+  shown: number;
+  dropped: number;
+}
+
+/**
+ * Render stacks as `Name xQuantity` lines, largest first.
+ *
+ * One line per stack costs about a quarter of what the equivalent array of JSON
+ * objects does, which is what makes returning a whole bank affordable. Item ids
+ * are omitted deliberately: every tool that consumes these names — ge_price,
+ * check_materials, get_infobox — resolves by name, so the ids are dead weight.
+ *
+ * Sorting by quantity means a list long enough to truncate loses only its
+ * least significant tail.
+ */
+export function renderItemLines(
+  items: ItemStack[],
+  maxChars: number = MAX_ITEM_LIST_CHARS,
+): RenderedItems {
+  const sorted = [...items].sort((a, b) => b.quantity - a.quantity);
+
+  const lines: string[] = [];
+  let used = 0;
+
+  for (const item of sorted) {
+    const line = `${item.name} x${item.quantity}`;
+    // +1 for the newline joining this line to the previous one.
+    const cost = line.length + (lines.length === 0 ? 0 : 1);
+    if (used + cost > maxChars) break;
+    lines.push(line);
+    used += cost;
+  }
+
+  return {
+    text: lines.join("\n"),
+    shown: lines.length,
+    dropped: sorted.length - lines.length,
+  };
+}
+
 export type ContainerItems = Partial<Record<ContainerName, ItemStack[]>>;
 
 export interface MaterialCheck {

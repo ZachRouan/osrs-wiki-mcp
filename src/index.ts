@@ -10,6 +10,7 @@ import {
   checkMaterials,
   CONTAINERS,
   describeAge,
+  renderItemLines,
   searchItems,
   topByQuantity,
   totalQuantity,
@@ -467,11 +468,22 @@ export class OsrsWikiMCP extends McpAgent<Env> {
           .optional()
           .describe(
             "Case-insensitive substring of an item name, e.g. 'topaz' or 'rune bar'. " +
-              "Strongly preferred — without it only a summary of the bank is returned.",
+              "Strongly preferred — without it only a summary of the bank is returned, " +
+              "unless full is set.",
+          ),
+        full: z
+          .boolean()
+          .optional()
+          .describe(
+            "Return every item in the bank as 'Name xQuantity' lines, largest stack first. " +
+              "Use for questions that need the whole picture, such as what to do with the " +
+              "bank, what the player can build or train with, or what is worth selling. " +
+              "For a specific item prefer search, or check_materials for several at once — " +
+              "a full bank is hundreds of lines. Ignored when search is given.",
           ),
         username,
       },
-      async ({ search, username: name }) => {
+      async ({ search, full, username: name }) => {
         const player = this.resolvePlayer(name);
         if (!player) return noPlayer;
 
@@ -503,8 +515,24 @@ export class OsrsWikiMCP extends McpAgent<Env> {
             );
           }
 
-          // No search term: a full dump would be thousands of lines, so return
-          // a summary and push the caller towards a filtered call.
+          if (full) {
+            const rendered = renderItemLines(snapshot.items);
+            const header = [
+              `${player} bank — ${snapshot.items.length} distinct items, ` +
+                `${totalQuantity(snapshot.items).toLocaleString("en-US")} total quantity.`,
+              `Synced ${age} (${snapshot.received_at}).`,
+              ...(rendered.dropped > 0
+                ? [
+                    `Showing the ${rendered.shown} largest stacks; ${rendered.dropped} ` +
+                      `smaller ones were dropped to fit. Use search for anything missing.`,
+                  ]
+                : []),
+            ].join("\n");
+            return text(`${header}\n\n${rendered.text}`);
+          }
+
+          // No search term and not a full dump: thousands of lines would be
+          // wasteful, so return a summary and push the caller to a filtered call.
           return text(
             JSON.stringify(
               {
@@ -517,7 +545,8 @@ export class OsrsWikiMCP extends McpAgent<Env> {
                 note:
                   `Showing only the ${BANK_SUMMARY_LIMIT} largest stacks of ` +
                   `${snapshot.items.length} distinct items. Call get_bank again with a search ` +
-                  `term to look up a specific item, or check_materials for several at once.`,
+                  `term to look up a specific item, check_materials for several at once, or ` +
+                  `full=true to list the entire bank.`,
                 largest_stacks: topByQuantity(snapshot.items, BANK_SUMMARY_LIMIT),
               },
               null,
