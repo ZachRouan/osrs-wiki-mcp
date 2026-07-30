@@ -85,7 +85,7 @@ describe("parseJournalLines", () => {
     // The whole point of the feature: the tail of an in-progress journal is
     // the current objective, and it is the part NOT struck through.
     const parsed = parseJournalLines(guthix.lines);
-    expect(parsed).toHaveLength(53);
+    expect(parsed).toHaveLength(51);
     expect(parsed.filter((line) => line.done)).toHaveLength(47);
     expect(parsed[0]).toEqual({
       text: "I spoke to Ivy Sophista in Taverley. She directed me to",

@@ -51,11 +51,9 @@
         "<str>some new Truth Serum. I then administered the Truth Serum to",
         "<str>the Spy and he provided details on an individual known as the",
         "<str>Dark Squall.",
-        "<col=000080>Based on the information provided",
-        "<col=800000>Idria<col=000080> and <col=800000>Akrisae<col=000080> initiated",
+        "<col=000080>Based on the information provided, <col=800000>Idria<col=000080> and <col=800000>Akrisae<col=000080> initiated",
         "<col=000080>a search for the <col=800000>Dark Squall<col=000080>. I then recruited <col=800000>Harrallak",
-        "<col=800000>Menarous<col=000080>",
-        "<col=800000>Ghommal<col=000080> and <col=800000>Sloane<col=000080> to our cause. I should speak",
+        "<col=800000>Menarous<col=000080>, <col=800000>Ghommal<col=000080> and <col=800000>Sloane<col=000080> to our cause. I should speak",
         "<col=000080>to the others about what to do next."
       ]
     },
@@ -167,5 +165,6 @@
         "<col=ff0000>QUEST COMPLETE!"
       ]
     }
-  ]
+  ],
+  "_provenance": "Captured from the live client. While Guthix Sleeps is exact: its 51 lines were confirmed against a real end-to-end capture through the deployed Worker. The other two captures were reconstructed from a log of Java's List.toString() and may split a line on an internal comma; they are used only for properties that do not depend on line boundaries."
 }
