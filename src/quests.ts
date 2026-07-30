@@ -12,7 +12,11 @@
  * module, which is what its own test file does.
  */
 
-import { MAX_JOURNAL_LINE_CHARS, MAX_JOURNAL_LINES } from "./items";
+import { describeAge, MAX_JOURNAL_LINE_CHARS, MAX_JOURNAL_LINES } from "./items";
+// `QuestSnapshot` is a type-only import: `quest-store.ts` imports values from
+// this module, so a value import back here would create a runtime cycle.
+// `import type` is erased at compile time and carries no runtime dependency.
+import type { QuestSnapshot } from "./quest-store";
 
 export interface JournalLine {
   text: string;
@@ -91,4 +95,110 @@ export function matchQuest(query: string, names: string[]): QuestMatch {
   const partial = names.filter((name) => questSlug(name).includes(wanted));
   if (partial.length === 1) return { matched: partial[0], candidates: [] };
   return { matched: null, candidates: partial };
+}
+
+export interface JournalReport {
+  captured_at: string;
+  age: string;
+  captured_at_progress_var: number | null;
+  /** True when known-stale, false when known-current, null when undecidable. */
+  stale: boolean | null;
+  stale_note?: string;
+  lines: JournalLine[];
+}
+
+export interface QuestReport {
+  quest: string | null;
+  state: string | null;
+  progress_var: number | null;
+  journal: JournalReport | null;
+  candidates: string[];
+  note?: string;
+}
+
+const REOPEN =
+  "Ask the player to open this quest in their in-game quest journal, which " +
+  "re-syncs the current text within a few seconds.";
+
+/**
+ * Join a stored journal to the live quest state.
+ *
+ * Staleness is reported, never guessed. The progress var is the only signal
+ * that catches movement within a quest; without one the report says the age and
+ * stops, rather than implying the text is current.
+ */
+export function questReport(
+  query: string,
+  snapshot: QuestSnapshot | null,
+  state: string | null,
+  nowMs: number,
+): QuestReport {
+  const known = new Set<string>();
+  for (const entry of snapshot?.in_progress ?? []) known.add(entry.quest);
+  for (const journal of Object.values(snapshot?.journals ?? {})) known.add(journal.quest);
+
+  const match = matchQuest(query, [...known]);
+  if (!match.matched) {
+    return {
+      quest: null,
+      state: null,
+      progress_var: null,
+      journal: null,
+      candidates: match.candidates,
+      note:
+        match.candidates.length > 0
+          ? "Several quests match that name. Ask for one of the candidates by its full name."
+          : `No journal or progress is stored for "${query}". ${REOPEN}`,
+    };
+  }
+
+  const live = (snapshot?.in_progress ?? []).find((entry) => entry.quest === match.matched);
+  const stored = snapshot?.journals?.[questSlug(match.matched)] ?? null;
+  const progressVar = live?.progress_var ?? null;
+
+  if (!stored) {
+    return {
+      quest: match.matched,
+      state,
+      progress_var: progressVar,
+      journal: null,
+      candidates: [],
+      note: `No journal has been captured for this quest. ${REOPEN}`,
+    };
+  }
+
+  const capturedVar = stored.progress_var;
+  let stale: boolean | null;
+  let note: string | undefined;
+
+  if (state === "completed") {
+    stale = true;
+    note = `This quest is complete, so the journal below is from before it was finished. ${REOPEN}`;
+  } else if (capturedVar === null || progressVar === null) {
+    // No var for this quest, so movement within it is invisible here.
+    stale = null;
+    note =
+      "This quest has no progress number, so whether the journal is current " +
+      `cannot be checked — only its age is known. ${REOPEN}`;
+  } else if (capturedVar !== progressVar) {
+    stale = true;
+    note = `The player has progressed since this journal was captured. ${REOPEN}`;
+  } else {
+    stale = false;
+  }
+
+  return {
+    quest: match.matched,
+    state,
+    progress_var: progressVar,
+    candidates: [],
+    journal: {
+      captured_at: stored.captured_at,
+      age: describeAge(stored.captured_at, nowMs),
+      captured_at_progress_var: capturedVar,
+      stale,
+      ...(note ? { stale_note: note } : {}),
+      lines: stored.lines,
+    },
+  };
 }

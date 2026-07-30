@@ -12,12 +12,15 @@ import {
   type ContainerName,
   describeAge,
   type InventoryExtras,
+  MAX_QUEST_NAME_LENGTH,
   renderItemLines,
   searchItems,
   topByQuantity,
   totalQuantity,
 } from "./items";
 import { readAllContainers, readContainer, readSyncIndex } from "./item-store";
+import { readQuests } from "./quest-store";
+import { matchQuest, questReport } from "./quests";
 import { secureEquals } from "./secure-compare";
 import {
   fetchHiscores,
@@ -340,8 +343,20 @@ export class OsrsWikiMCP extends McpAgent<Env> {
       "get_quest_progress",
       "Get a player's actual quest completion states and achievement diary progress via " +
         "WikiSync. Use before giving quest advice.",
-      { username },
-      async ({ username: name }) => {
+      {
+        username,
+        quest: z
+          .string()
+          .max(MAX_QUEST_NAME_LENGTH)
+          .optional()
+          .describe(
+            "A single quest to report in detail. Returns the player's own quest journal " +
+              "text for it — the current objective in the game's words — when they have " +
+              "opened that quest's journal page in game. Use for 'where am I in X' and " +
+              "'what do I do next in X'. Omit for the overall picture.",
+          ),
+      },
+      async ({ username: name, quest }) => {
         const player = this.resolvePlayer(name);
         if (!player) return noPlayer;
 
@@ -349,7 +364,38 @@ export class OsrsWikiMCP extends McpAgent<Env> {
           const raw = await fetchWikiSync(this.env, player);
           if (!raw) return text(`No WikiSync data for "${player}". ${WIKISYNC_HELP}`);
 
-          return text(JSON.stringify(parseWikiSync(raw, player), null, 2));
+          const progress = parseWikiSync(raw, player);
+          const snapshot = await readQuests(this.env.WIKI_CACHE, player);
+
+          if (quest) {
+            const match = matchQuest(quest, [
+              ...progress.quests.completed,
+              ...progress.quests.in_progress,
+              ...progress.quests.not_started,
+            ]);
+            const state = match.matched
+              ? progress.quests.completed.includes(match.matched)
+                ? "completed"
+                : progress.quests.in_progress.includes(match.matched)
+                  ? "in_progress"
+                  : "not_started"
+              : null;
+
+            return text(
+              JSON.stringify(questReport(quest, snapshot, state, Date.now()), null, 2),
+            );
+          }
+
+          return text(
+            JSON.stringify(
+              {
+                ...progress,
+                journals_available: Object.values(snapshot?.journals ?? {}).map((j) => j.quest),
+              },
+              null,
+              2,
+            ),
+          );
         } catch (error) {
           return text(`Could not reach WikiSync for "${player}": ${describe(error)}`);
         }

@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { readQuests, storeQuests, MAX_STORED_JOURNALS } from "../src/quest-store";
 import type { IngestPayload } from "../src/items";
+import { questReport } from "../src/quests";
+import type { QuestSnapshot } from "../src/quest-store";
 
 class FakeKV {
   readonly store = new Map<string, string>();
@@ -152,5 +154,80 @@ describe("storeQuests", () => {
       T0 + 1000,
     );
     expect((await readQuests(kv, "questtest"))!.journals["a quest"]).toBeDefined();
+  });
+});
+
+const NOW = Date.parse("2026-07-30T14:00:00.000Z");
+
+const snapshot: QuestSnapshot = {
+  username: "questtest",
+  updated_at: "2026-07-30T13:00:00.000Z",
+  in_progress: [
+    { quest: "While Guthix Sleeps", progress_var: 24 },
+    { quest: "The Frozen Door" },
+    { quest: "Desert Treasure I", progress_var: 2 },
+    { quest: "Desert Treasure II - The Fallen Empire", progress_var: 5 },
+  ],
+  journals: {
+    "while guthix sleeps": {
+      quest: "While Guthix Sleeps",
+      captured_at: "2026-07-30T12:00:00.000Z",
+      client_timestamp: null,
+      progress_var: 18,
+      lines: [{ text: "Report to Idria.", done: false }],
+    },
+    "the frozen door": {
+      quest: "The Frozen Door",
+      captured_at: "2026-07-30T12:00:00.000Z",
+      client_timestamp: null,
+      progress_var: null,
+      lines: [{ text: "Find the strange door.", done: false }],
+    },
+  },
+};
+
+describe("questReport", () => {
+  it("flags a journal the player has progressed past", () => {
+    const report = questReport("guthix sleeps", snapshot, "in_progress", NOW);
+    expect(report.quest).toBe("While Guthix Sleeps");
+    expect(report.progress_var).toBe(24);
+    expect(report.journal!.captured_at_progress_var).toBe(18);
+    expect(report.journal!.stale).toBe(true);
+    expect(report.journal!.stale_note).toMatch(/reopen|open this quest/i);
+  });
+
+  it("does not flag a journal captured at the current progress", () => {
+    const current: QuestSnapshot = {
+      ...snapshot,
+      in_progress: [{ quest: "While Guthix Sleeps", progress_var: 18 }],
+    };
+    expect(questReport("While Guthix Sleeps", current, "in_progress", NOW).journal!.stale).toBe(false);
+  });
+
+  it("cannot judge staleness without a var, and says so rather than guessing", () => {
+    const report = questReport("The Frozen Door", snapshot, "in_progress", NOW);
+    expect(report.journal!.stale).toBe(null);
+    expect(report.journal!.age).toBe("2 hours ago");
+  });
+
+  it("flags a journal captured before the quest was completed", () => {
+    const report = questReport("The Frozen Door", snapshot, "completed", NOW);
+    expect(report.journal!.stale).toBe(true);
+  });
+
+  it("explains how to get a journal that was never captured", () => {
+    const report = questReport("Sins of the Father", snapshot, "in_progress", NOW);
+    expect(report.journal).toBe(null);
+    expect(report.note).toMatch(/open .*quest journal/i);
+  });
+
+  it("reports ambiguity instead of picking a quest", () => {
+    const report = questReport("desert treasure", snapshot, "in_progress", NOW);
+    expect(report.quest).toBe(null);
+    expect(report.candidates).toEqual([
+      "Desert Treasure I",
+      "Desert Treasure II - The Fallen Empire",
+    ]);
+    expect(report.note).toMatch(/several quests match/i);
   });
 });
