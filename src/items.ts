@@ -18,6 +18,15 @@ export type ContainerName = (typeof CONTAINERS)[number];
  */
 export const MAX_ITEMS_PER_CONTAINER = 10_000;
 
+/** One line per journal text widget, so the interface bounds the count. */
+export const MAX_JOURNAL_LINES = 210;
+
+/** Long enough for any real journal line; short enough to bound the payload. */
+export const MAX_JOURNAL_LINE_CHARS = 200;
+
+/** Comfortably longer than "Recipe for Disaster: Freeing King Awowogei". */
+export const MAX_QUEST_NAME_LENGTH = 60;
+
 /** Long enough for every real item name; short enough to bound the payload. */
 const MAX_ITEM_NAME_LENGTH = 120;
 
