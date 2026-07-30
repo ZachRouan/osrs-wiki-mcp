@@ -7,6 +7,7 @@
 
 import { ingestPayloadSchema } from "./items";
 import { type ItemKV, storeContainers } from "./item-store";
+import { storeQuests } from "./quest-store";
 import { secureEquals } from "./secure-compare";
 
 export const INGEST_PATH = "/ingest/items";
@@ -79,7 +80,8 @@ export async function handleIngest(request: Request, config: IngestConfig): Prom
 
   try {
     const result = await storeContainers(config.kv, parsed.data, Date.now());
-    return json(result, 200);
+    const quests = await storeQuests(config.kv, parsed.data, Date.now());
+    return json({ ...result, quests }, 200);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return json({ error: `Could not store the snapshot: ${message}` }, 500);
