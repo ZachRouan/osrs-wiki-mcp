@@ -147,7 +147,7 @@ export async function storeContainers(
   let indexChanged = false;
 
   for (const container of CONTAINERS) {
-    const items = payload.containers[container];
+    const items = payload.containers?.[container];
     if (items === undefined) continue;
 
     const previous = index.containers[container];

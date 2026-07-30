@@ -49,34 +49,78 @@ export const itemStackSchema = z.object({
 
 export type ItemStack = z.infer<typeof itemStackSchema>;
 
-export const ingestPayloadSchema = z.object({
-  username: z.string().min(1).max(MAX_USERNAME_LENGTH),
-  /** The plugin's clock. Recorded, but never trusted for freshness. */
-  timestamp: z.string().min(1).max(64).optional(),
-  containers: z
-    .object({
-      bank: z.array(itemStackSchema).max(MAX_ITEMS_PER_CONTAINER).optional(),
-      inventory: z.array(itemStackSchema).max(MAX_ITEMS_PER_CONTAINER).optional(),
-      equipment: z.array(itemStackSchema).max(MAX_ITEMS_PER_CONTAINER).optional(),
-    })
-    // At least one container, otherwise the push is a no-op that still costs a
-    // KV read and an index write.
-    .refine((c) => CONTAINERS.some((name) => c[name] !== undefined), {
-      message: "containers must include at least one of bank, inventory, equipment",
-    }),
-  /**
-   * Occupied and total inventory slots, counted before the plugin merged stacks
-   * by item id. Without these the item list's length is the only slot estimate
-   * available, and it undercounts every non-stackable duplicate.
-   */
-  inventory_slots_used: z.number().int().nonnegative().max(MAX_ITEMS_PER_CONTAINER).optional(),
-  inventory_slots_total: z.number().int().nonnegative().max(MAX_ITEMS_PER_CONTAINER).optional(),
-  /**
-   * Runes in a carried rune pouch. The inventory reports the pouch as one opaque
-   * item, so these would otherwise be invisible. A pouch holds at most six kinds.
-   */
-  pouch_contents: z.array(itemStackSchema).max(MAX_POUCH_SLOTS).optional(),
+export const questJournalSchema = z.object({
+  quest: z.string().min(1).max(MAX_QUEST_NAME_LENGTH),
+  /** Absent for the handful of quests with no var in the ported table. */
+  progress_var: z.number().int().nonnegative().optional(),
+  lines: z.array(z.string().max(MAX_JOURNAL_LINE_CHARS)).max(MAX_JOURNAL_LINES),
 });
+
+export const questProgressEntrySchema = z.object({
+  quest: z.string().min(1).max(MAX_QUEST_NAME_LENGTH),
+  progress_var: z.number().int().nonnegative().optional(),
+});
+
+export type QuestJournalPayload = z.infer<typeof questJournalSchema>;
+export type QuestProgressEntry = z.infer<typeof questProgressEntrySchema>;
+
+/** Every quest in the game, so a malformed push cannot fill the value. */
+export const MAX_IN_PROGRESS_QUESTS = 210;
+
+/**
+ * KV key holding one player's journals and in-progress vars. One key rather
+ * than one per quest: a capture then costs a single write and needs no index to
+ * answer "which quests have journals".
+ */
+export function journalKey(username: string): string {
+  return `quests:${normalizeUsername(username)}`;
+}
+
+export const ingestPayloadSchema = z
+  .object({
+    username: z.string().min(1).max(MAX_USERNAME_LENGTH),
+    /** The plugin's clock. Recorded, but never trusted for freshness. */
+    timestamp: z.string().min(1).max(64).optional(),
+    containers: z
+      .object({
+        bank: z.array(itemStackSchema).max(MAX_ITEMS_PER_CONTAINER).optional(),
+        inventory: z.array(itemStackSchema).max(MAX_ITEMS_PER_CONTAINER).optional(),
+        equipment: z.array(itemStackSchema).max(MAX_ITEMS_PER_CONTAINER).optional(),
+      })
+      .optional(),
+    /**
+     * Occupied and total inventory slots, counted before the plugin merged stacks
+     * by item id. Without these the item list's length is the only slot estimate
+     * available, and it undercounts every non-stackable duplicate.
+     */
+    inventory_slots_used: z.number().int().nonnegative().max(MAX_ITEMS_PER_CONTAINER).optional(),
+    inventory_slots_total: z.number().int().nonnegative().max(MAX_ITEMS_PER_CONTAINER).optional(),
+    /**
+     * Runes in a carried rune pouch. The inventory reports the pouch as one opaque
+     * item, so these would otherwise be invisible. A pouch holds at most six kinds.
+     */
+    pouch_contents: z.array(itemStackSchema).max(MAX_POUCH_SLOTS).optional(),
+    /** Present only on the push triggered by opening a quest's journal page. */
+    quest_journal: questJournalSchema.optional(),
+    /**
+     * Sent on every push, not only journal opens. This is what makes a stale
+     * journal detectable: the journal records the var as it was at capture time,
+     * and a later push carries the current one.
+     */
+    quests_in_progress: z.array(questProgressEntrySchema).max(MAX_IN_PROGRESS_QUESTS).optional(),
+  })
+  // At least one of containers, journal or vars, otherwise the push is a no-op
+  // that still costs a KV read and an index write.
+  .refine(
+    (p) =>
+      (p.containers !== undefined && CONTAINERS.some((name) => p.containers?.[name] !== undefined)) ||
+      p.quest_journal !== undefined ||
+      p.quests_in_progress !== undefined,
+    {
+      message: "push must include a container, a quest journal or quest progress",
+      path: ["containers"],
+    },
+  );
 
 export type IngestPayload = z.infer<typeof ingestPayloadSchema>;
 

@@ -388,3 +388,40 @@ describe("inventory slots and rune pouch", () => {
     });
   });
 })
+
+describe("quest payload acceptance", () => {
+  const journal = {
+    username: "questtest",
+    quest_journal: {
+      quest: "While Guthix Sleeps",
+      progress_var: 24,
+      lines: ["<str>Spoke to Ali.</str>", "I should report back to Idria."],
+    },
+  };
+
+  it("accepts a payload carrying only a journal", async () => {
+    expect((await handleIngest(post(journal), config)).status).toBe(200);
+  });
+
+  it("accepts a payload carrying only progress vars", async () => {
+    const vars = {
+      username: "questtest",
+      quests_in_progress: [{ quest: "The Frozen Door" }, { quest: "Sins of the Father", progress_var: 7 }],
+    };
+    expect((await handleIngest(post(vars), config)).status).toBe(200);
+  });
+
+  it("still rejects a payload with nothing in it at all", async () => {
+    const response = await handleIngest(post({ username: "questtest" }), config);
+    expect(response.status).toBe(400);
+    expect(kv.writes).toEqual([]);
+  });
+
+  it("rejects a journal with more lines than the interface can hold", async () => {
+    const tooMany = {
+      username: "questtest",
+      quest_journal: { quest: "X", lines: Array.from({ length: 400 }, () => "line") },
+    };
+    expect((await handleIngest(post(tooMany), config)).status).toBe(400);
+  });
+});
