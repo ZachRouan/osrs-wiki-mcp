@@ -316,16 +316,36 @@ Staleness is reported, never guessed at:
 Without `quest`, the response is unchanged apart from a list of which quests
 have journals stored, so a model can see what is available before asking.
 
-## Unknowns to settle before writing the parser
+## What the client actually does (settled in the development client)
 
-Both are empirical and both will be resolved in the development client using the
-Widget Inspector, not guessed:
+Both unknowns were resolved by probing three real journal opens rather than
+guessing, and the captures are committed as `test/fixtures/quest-journal-raw.json`.
 
-1. **Timing.** Whether `WidgetLoaded(119)` fires before the text is populated.
-   If it does, the read moves to `ScriptPostFired` for the journal's build
-   script, or to `clientThread.invokeLater`.
-2. **Completed-step markup.** Whether completed steps are marked with `<str>`,
-   a colour tag, or something else. This determines the `done` flag.
+**Timing: no deferral needed.** `WidgetLoaded(119)` fires with the text already
+populated. Probes at widget-load and one tick later returned byte-identical
+titles and lines for all three quests (3,109 / 1,253 / 4,409 characters), so the
+handler reads directly.
+
+**Markup: `<str>` marks a completed step**, opening at the start of the line and
+never closed. The complete tag vocabulary observed is `<str>`, `<col=rrggbb>`
+and `</col>` — no `<br>`, no `<img>`. A quest's title arrives wrapped in
+`<col=7f0000>`, and a finished quest ends with a `<col=ff0000>QUEST COMPLETE`
+line.
+
+**The outstanding objective is the un-struck tail.** While Guthix Sleeps
+captured as 53 lines, 47 struck through and 6 not; the final line reads "to the
+others about what to do next." That is exactly the signal this feature exists to
+surface. Both finished quests captured with every line struck except the
+QUEST COMPLETE marker.
+
+**Tags are removed, not replaced with a space.** The journal recolours proper
+nouns mid-sentence, so space-replacement yields "Dark Squall ." instead of
+"Dark Squall.". Across every captured line no tag sits between two word
+characters, so removal cannot glue words together.
+
+**Lines are visual, not logical.** The journal wraps a sentence across several
+widgets, so a step spans multiple lines and no line is a self-contained
+sentence. This is fine for reading but means line count is not step count.
 
 A third, smaller question: whether opening a *completed* quest's journal is
 worth storing. The intent is to skip it — `Quest.getState()` already reports
