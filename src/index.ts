@@ -20,7 +20,7 @@ import {
 } from "./items";
 import { readAllContainers, readContainer, readSyncIndex } from "./item-store";
 import { readQuests } from "./quest-store";
-import { matchQuest, questReport } from "./quests";
+import { questReport } from "./quests";
 import { secureEquals } from "./secure-compare";
 import {
   fetchHiscores,
@@ -368,21 +368,8 @@ export class OsrsWikiMCP extends McpAgent<Env> {
           const snapshot = await readQuests(this.env.WIKI_CACHE, player);
 
           if (quest) {
-            const match = matchQuest(quest, [
-              ...progress.quests.completed,
-              ...progress.quests.in_progress,
-              ...progress.quests.not_started,
-            ]);
-            const state = match.matched
-              ? progress.quests.completed.includes(match.matched)
-                ? "completed"
-                : progress.quests.in_progress.includes(match.matched)
-                  ? "in_progress"
-                  : "not_started"
-              : null;
-
             return text(
-              JSON.stringify(questReport(quest, snapshot, state, Date.now()), null, 2),
+              JSON.stringify(questReport(quest, snapshot, progress.quests, Date.now()), null, 2),
             );
           }
 

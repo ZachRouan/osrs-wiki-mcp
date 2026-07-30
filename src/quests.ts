@@ -120,21 +120,39 @@ const REOPEN =
   "Ask the player to open this quest in their in-game quest journal, which " +
   "re-syncs the current text within a few seconds.";
 
+/** The three WikiSync quest-state lists, as returned by `parseWikiSync`. */
+export interface WikiSyncQuests {
+  completed: string[];
+  in_progress: string[];
+  not_started: string[];
+}
+
 /**
  * Join a stored journal to the live quest state.
  *
  * Staleness is reported, never guessed. The progress var is the only signal
  * that catches movement within a quest; without one the report says the age and
  * stops, rather than implying the text is current.
+ *
+ * The name is matched exactly once, against the union of every quest WikiSync
+ * knows about (not just the handful with a locally cached journal or var).
+ * Matching against the cache alone would make every quest without a cache
+ * entry unmatchable, and — worse — could resolve a name that is genuinely
+ * ambiguous game-wide to whichever candidate happens to survive in the
+ * smaller cache, reporting a confident answer under the wrong identity.
  */
 export function questReport(
   query: string,
   snapshot: QuestSnapshot | null,
-  state: string | null,
+  wikiSync: WikiSyncQuests,
   nowMs: number,
 ): QuestReport {
   const known = new Set<string>();
-  for (const entry of snapshot?.in_progress ?? []) known.add(entry.quest);
+  for (const name of wikiSync.completed) known.add(name);
+  for (const name of wikiSync.in_progress) known.add(name);
+  for (const name of wikiSync.not_started) known.add(name);
+  // A stored journal whose quest name has drifted from WikiSync's current
+  // list (a wiki rename, a sync gap) should still be findable.
   for (const journal of Object.values(snapshot?.journals ?? {})) known.add(journal.quest);
 
   const match = matchQuest(query, [...known]);
@@ -151,6 +169,14 @@ export function questReport(
           : `No journal or progress is stored for "${query}". ${REOPEN}`,
     };
   }
+
+  const state = wikiSync.completed.includes(match.matched)
+    ? "completed"
+    : wikiSync.in_progress.includes(match.matched)
+      ? "in_progress"
+      : wikiSync.not_started.includes(match.matched)
+        ? "not_started"
+        : null;
 
   const live = (snapshot?.in_progress ?? []).find((entry) => entry.quest === match.matched);
   const stored = snapshot?.journals?.[questSlug(match.matched)] ?? null;

@@ -186,10 +186,28 @@ const snapshot: QuestSnapshot = {
   },
 };
 
+// The full WikiSync quest lists, distinct from `snapshot`: WikiSync knows every
+// quest in the game, while `snapshot` (locally cached journals/vars) only knows
+// the handful the player has opened. `questReport` must match against this full
+// picture — matching against `snapshot` alone is the bug this fixture split
+// guards against (a quest with no cached journal would be unmatchable, and a
+// name ambiguous game-wide but unique within the cache would silently resolve).
+const wikiSync = {
+  completed: [] as string[],
+  in_progress: [
+    "While Guthix Sleeps",
+    "The Frozen Door",
+    "Desert Treasure I",
+    "Desert Treasure II - The Fallen Empire",
+  ],
+  not_started: ["Sins of the Father"],
+};
+
 describe("questReport", () => {
   it("flags a journal the player has progressed past", () => {
-    const report = questReport("guthix sleeps", snapshot, "in_progress", NOW);
+    const report = questReport("guthix sleeps", snapshot, wikiSync, NOW);
     expect(report.quest).toBe("While Guthix Sleeps");
+    expect(report.state).toBe("in_progress");
     expect(report.progress_var).toBe(24);
     expect(report.journal!.captured_at_progress_var).toBe(18);
     expect(report.journal!.stale).toBe(true);
@@ -201,33 +219,87 @@ describe("questReport", () => {
       ...snapshot,
       in_progress: [{ quest: "While Guthix Sleeps", progress_var: 18 }],
     };
-    expect(questReport("While Guthix Sleeps", current, "in_progress", NOW).journal!.stale).toBe(false);
+    expect(questReport("While Guthix Sleeps", current, wikiSync, NOW).journal!.stale).toBe(false);
   });
 
   it("cannot judge staleness without a var, and says so rather than guessing", () => {
-    const report = questReport("The Frozen Door", snapshot, "in_progress", NOW);
+    const report = questReport("The Frozen Door", snapshot, wikiSync, NOW);
     expect(report.journal!.stale).toBe(null);
     expect(report.journal!.age).toBe("2 hours ago");
   });
 
   it("flags a journal captured before the quest was completed", () => {
-    const report = questReport("The Frozen Door", snapshot, "completed", NOW);
+    const completedWikiSync = {
+      completed: ["The Frozen Door"],
+      in_progress: ["While Guthix Sleeps", "Desert Treasure I", "Desert Treasure II - The Fallen Empire"],
+      not_started: ["Sins of the Father"],
+    };
+    const report = questReport("The Frozen Door", snapshot, completedWikiSync, NOW);
+    expect(report.state).toBe("completed");
     expect(report.journal!.stale).toBe(true);
   });
 
   it("explains how to get a journal that was never captured", () => {
-    const report = questReport("Sins of the Father", snapshot, "in_progress", NOW);
+    const report = questReport("Sins of the Father", snapshot, wikiSync, NOW);
     expect(report.journal).toBe(null);
     expect(report.note).toMatch(/open .*quest journal/i);
   });
 
   it("reports ambiguity instead of picking a quest", () => {
-    const report = questReport("desert treasure", snapshot, "in_progress", NOW);
+    const report = questReport("desert treasure", snapshot, wikiSync, NOW);
     expect(report.quest).toBe(null);
     expect(report.candidates).toEqual([
       "Desert Treasure I",
       "Desert Treasure II - The Fallen Empire",
     ]);
+    expect(report.note).toMatch(/several quests match/i);
+  });
+
+  it("resolves a completed quest with no stored journal, rather than reporting it unrecognised", () => {
+    // Under the bug this guards against, `questReport` matched only against
+    // `snapshot` (in_progress + journals), which never contains a completed
+    // quest the player has no local cache for. That silently dropped the
+    // canonical name and state, returning `quest: null` as if unrecognised.
+    const completedNoJournal = {
+      completed: ["Cook's Assistant"],
+      in_progress: [],
+      not_started: [],
+    };
+    const report = questReport("Cook's Assistant", snapshot, completedNoJournal, NOW);
+    expect(report.quest).toBe("Cook's Assistant");
+    expect(report.state).toBe("completed");
+    expect(report.journal).toBe(null);
+    expect(report.note).toMatch(/no journal has been captured/i);
+  });
+
+  it("resolves a not_started quest entirely absent from the snapshot", () => {
+    const notStartedOnly = { completed: [], in_progress: [], not_started: ["Sins of the Father"] };
+    const report = questReport("Sins of the Father", snapshot, notStartedOnly, NOW);
+    expect(report.quest).toBe("Sins of the Father");
+    expect(report.state).toBe("not_started");
+    expect(report.journal).toBe(null);
+  });
+
+  it("reports ambiguity across the full WikiSync list even when the cached subset is unique", () => {
+    // The trap: "treasure" is ambiguous against the full quest list ("Buried
+    // Treasure" and "Desert Treasure I"), but only "Desert Treasure I" has a
+    // local snapshot entry. Matching against the snapshot alone would resolve
+    // confidently to it instead of reporting the ambiguity — a wrong-identity
+    // report, not just a missed one.
+    const narrowSnapshot: QuestSnapshot = {
+      username: "questtest",
+      updated_at: "2026-07-30T13:00:00.000Z",
+      in_progress: [{ quest: "Desert Treasure I", progress_var: 2 }],
+      journals: {},
+    };
+    const wideWikiSync = {
+      completed: ["Buried Treasure"],
+      in_progress: ["Desert Treasure I"],
+      not_started: [],
+    };
+    const report = questReport("treasure", narrowSnapshot, wideWikiSync, NOW);
+    expect(report.quest).toBe(null);
+    expect(report.candidates).toEqual(["Buried Treasure", "Desert Treasure I"]);
     expect(report.note).toMatch(/several quests match/i);
   });
 });
