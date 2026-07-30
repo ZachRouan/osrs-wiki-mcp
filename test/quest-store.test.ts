@@ -76,6 +76,35 @@ describe("storeQuests", () => {
     expect(journals["quest 27"]).toBeDefined();
   });
 
+  it("evicts by captured_at, not by insertion order", async () => {
+    // Fill to the cap with distinct quests at increasing timestamps. "Quest 0"
+    // is inserted first and would sit first in Object.keys(...) order forever
+    // unless eviction genuinely looks at captured_at instead.
+    for (let i = 0; i < MAX_STORED_JOURNALS; i++) {
+      await storeQuests(kv, journalPush(`Quest ${i}`, [`line ${i}`]), T0 + i * 1000);
+    }
+
+    // Re-capture "Quest 0" with different content much later: its captured_at
+    // becomes the newest in the set, but its key position in the journals
+    // object is unchanged (still first), since re-assigning an existing key
+    // does not move it in insertion order. Content must actually change or
+    // the dedupe path would keep the old captured_at and defeat this test.
+    await storeQuests(kv, journalPush("Quest 0", ["line 0 v2"]), T0 + 1_000_000);
+
+    // One more brand-new quest forces an eviction of exactly one journal.
+    await storeQuests(kv, journalPush("Quest 25", ["line 25"]), T0 + 1_000_000 + 1000);
+
+    const journals = (await readQuests(kv, "questtest"))!.journals;
+    expect(Object.keys(journals)).toHaveLength(MAX_STORED_JOURNALS);
+    // "Quest 0" was refreshed most recently, so it survives despite being
+    // first in insertion order.
+    expect(journals["quest 0"]).toBeDefined();
+    expect(journals["quest 0"].lines).toEqual([{ text: "line 0 v2", done: false }]);
+    // "Quest 1" is now the genuinely oldest by captured_at and is the one
+    // dropped, not "Quest 0".
+    expect(journals["quest 1"]).toBeUndefined();
+  });
+
   it("records in-progress vars without a journal", async () => {
     const payload = {
       username: "questtest",
