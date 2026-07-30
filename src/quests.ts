@@ -42,6 +42,15 @@ const STRUCK = /<str>/i;
  */
 const MARKUP = /<[^>]*>/g;
 
+/**
+ * A tag left dangling by the plugin's 200-character raw-line cutoff, which
+ * counts markup toward the limit and can land mid-tag (e.g. `<col=7f00`).
+ * `MARKUP` only removes *complete* tags, so this catches whatever it leaves
+ * behind: after every complete tag is stripped, an unmatched `<` running to
+ * the end of the string cannot be anything else.
+ */
+const TRAILING_INCOMPLETE_TAG = /<[^>]*$/;
+
 export function parseJournalLines(raw: string[]): JournalLine[] {
   const lines: JournalLine[] = [];
 
@@ -50,7 +59,11 @@ export function parseJournalLines(raw: string[]): JournalLine[] {
     if (typeof line !== "string") continue;
 
     const done = STRUCK.test(line);
-    const text = line.replace(MARKUP, "").replace(/\s+/g, " ").trim();
+    const text = line
+      .replace(MARKUP, "")
+      .replace(TRAILING_INCOMPLETE_TAG, "")
+      .replace(/\s+/g, " ")
+      .trim();
     if (text === "") continue;
 
     lines.push({ text: text.slice(0, MAX_JOURNAL_LINE_CHARS), done });
@@ -101,6 +114,15 @@ export interface JournalReport {
   captured_at: string;
   age: string;
   captured_at_progress_var: number | null;
+  /**
+   * When the in-progress vars (and so `captured_at_progress_var`'s comparison
+   * point) were last refreshed, and how long ago that was. Vars only arrive on
+   * a bank open, an equipment change, login, or a journal open — never on
+   * inventory changes alone — so this can be well behind the present moment
+   * even when `stale` reads `false`.
+   */
+  vars_updated_at: string;
+  vars_age: string;
   /** True when known-stale, false when known-current, null when undecidable. */
   stale: boolean | null;
   stale_note?: string;
@@ -194,6 +216,11 @@ export function questReport(
   }
 
   const capturedVar = stored.progress_var;
+  // Safe to assert: `snapshot` is only null when `stored` is too (it comes
+  // from `snapshot?.journals`), and the `!stored` branch above already
+  // returned in that case.
+  const varsUpdatedAt = snapshot!.updated_at;
+  const varsAge = describeAge(varsUpdatedAt, nowMs);
   let stale: boolean | null;
   let note: string | undefined;
 
@@ -210,7 +237,15 @@ export function questReport(
     stale = true;
     note = `The player has progressed since this journal was captured. ${REOPEN}`;
   } else {
+    // Unchanged as of the last vars sync — not confirmed current. Progress
+    // vars only refresh on a bank open, an equipment change, login, or a
+    // journal open; inventory-only actions like fighting or talking to NPCs
+    // never trigger one, so the player may have moved on since this reading.
     stale = false;
+    note =
+      `Unchanged as of ${varsAge}, when progress was last synced — not confirmed current. Quest ` +
+      "progress only re-syncs when the player opens a bank, changes worn gear, logs in, or opens " +
+      `a quest journal, so they may have advanced since without it being caught. ${REOPEN}`;
   }
 
   return {
@@ -222,6 +257,8 @@ export function questReport(
       captured_at: stored.captured_at,
       age: describeAge(stored.captured_at, nowMs),
       captured_at_progress_var: capturedVar,
+      vars_updated_at: varsUpdatedAt,
+      vars_age: varsAge,
       stale,
       ...(note ? { stale_note: note } : {}),
       lines: stored.lines,

@@ -91,7 +91,7 @@ player opens a quest journal page
       quest_journal:       { quest, progress_var, lines[] }
       quests_in_progress:  [ { quest, progress_var } ]   ← on every sync
   → Worker parses markup, stores under quests:<user>
-  → get_quest_progress(quest) joins journal + WikiSync bucket + live var
+  → get_quest_progress(quest) joins journal + WikiSync bucket + var as of last sync
 ```
 
 The journal rides the existing debounce and the endpoint the plugin is already
@@ -291,8 +291,14 @@ after stripping punctuation and collapsing whitespace, take an exact match if
 there is one, otherwise a unique substring match, and if several quests match
 report the ambiguity with the candidates rather than picking one.
 
-With `quest`, the response carries the WikiSync bucket, the live progress var,
-and the stored journal with the var recorded at capture time:
+With `quest`, the response carries the WikiSync bucket, the progress var as of
+the last time it synced, and the stored journal with the var recorded at
+capture time. The var is not live: it only refreshes when the plugin pushes,
+which happens on a bank open, an equipment change, login, or a journal open —
+never on inventory changes alone — so a player can advance a quest for
+minutes without a push landing. `journal.vars_updated_at` /
+`journal.vars_age` say when that reading is actually from, and `stale: false`
+is worded as "unchanged as of `<age>`", not as an unqualified "current":
 
 ```json
 {
@@ -303,6 +309,8 @@ and the stored journal with the var recorded at capture time:
     "captured_at": "2026-07-29T21:14:02Z",
     "age": "2 hours ago",
     "captured_at_progress_var": 18,
+    "vars_updated_at": "2026-07-29T22:50:11Z",
+    "vars_age": "26 minutes ago",
     "stale": true,
     "stale_note": "You have progressed since this journal was captured. Ask the player to open this quest in their quest journal for current text.",
     "lines": [
@@ -319,6 +327,11 @@ Staleness is reported, never guessed at:
 - WikiSync says finished but the journal was captured mid-quest → same, worded
   for that case.
 - No var for this quest → `stale: null`, saying only the timestamp is available.
+- Vars unchanged since capture → `stale: false`, but worded as "unchanged as
+  of `vars_age`" rather than an unqualified "current", since `vars_age` can
+  itself be old — the vars only refresh on a bank open, an equipment change,
+  login, or a journal open, so the player may have advanced since without a
+  push catching it.
 - No journal stored → say so, and tell the model to ask the player to open the
   quest in their journal.
 

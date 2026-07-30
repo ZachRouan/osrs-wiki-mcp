@@ -212,14 +212,32 @@ describe("questReport", () => {
     expect(report.journal!.captured_at_progress_var).toBe(18);
     expect(report.journal!.stale).toBe(true);
     expect(report.journal!.stale_note).toMatch(/reopen|open this quest/i);
+    // The vars' own sync timestamp is surfaced regardless of which branch
+    // `stale` lands in — `snapshot.updated_at` here is 13:00, an hour before NOW.
+    expect(report.journal!.vars_updated_at).toBe("2026-07-30T13:00:00.000Z");
+    expect(report.journal!.vars_age).toBe("1 hour ago");
   });
 
-  it("does not flag a journal captured at the current progress", () => {
+  it("does not flag a journal captured at the current progress, but discloses the vars' own age", () => {
+    // `stale: false` only means the var hasn't moved since capture — it does
+    // not mean the reading is fresh. The note must disclose when the vars
+    // were last synced and that inventory-only play does not trigger a sync,
+    // rather than reading as an unqualified "current".
     const current: QuestSnapshot = {
       ...snapshot,
+      updated_at: "2026-07-30T13:40:00.000Z", // 20 minutes before NOW
       in_progress: [{ quest: "While Guthix Sleeps", progress_var: 18 }],
     };
-    expect(questReport("While Guthix Sleeps", current, wikiSync, NOW).journal!.stale).toBe(false);
+    const journal = questReport("While Guthix Sleeps", current, wikiSync, NOW).journal!;
+    expect(journal.stale).toBe(false);
+    expect(journal.vars_updated_at).toBe("2026-07-30T13:40:00.000Z");
+    expect(journal.vars_age).toBe("20 minutes ago");
+    expect(journal.stale_note).toMatch(/unchanged as of 20 minutes ago/i);
+    expect(journal.stale_note).toMatch(/not confirmed current/i);
+    expect(journal.stale_note).toMatch(/opens a bank/i);
+    expect(journal.stale_note).toMatch(/changes worn gear/i);
+    expect(journal.stale_note).toMatch(/logs in/i);
+    expect(journal.stale_note).toMatch(/opens a quest journal/i);
   });
 
   it("cannot judge staleness without a var, and says so rather than guessing", () => {
@@ -278,6 +296,18 @@ describe("questReport", () => {
     expect(report.quest).toBe("Sins of the Father");
     expect(report.state).toBe("not_started");
     expect(report.journal).toBe(null);
+  });
+
+  it("reports state: null, not a guessed bucket, when the WikiSync lists are empty", () => {
+    // This is the shape `index.ts` passes when WikiSync itself could not be
+    // reached: the quest is still resolvable from the locally cached journal,
+    // but none of the three empty lists can vouch for its state, so it must
+    // come back null rather than silently landing in "not_started".
+    const emptyWikiSync = { completed: [], in_progress: [], not_started: [] };
+    const report = questReport("guthix sleeps", snapshot, emptyWikiSync, NOW);
+    expect(report.quest).toBe("While Guthix Sleeps");
+    expect(report.state).toBe(null);
+    expect(report.journal).not.toBe(null);
   });
 
   it("reports ambiguity across the full WikiSync list even when the cached subset is unique", () => {

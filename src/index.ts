@@ -360,31 +360,68 @@ export class OsrsWikiMCP extends McpAgent<Env> {
         const player = this.resolvePlayer(name);
         if (!player) return noPlayer;
 
+        // WikiSync failure is kept separate from a thrown exception: a stored
+        // journal is this player's own data and does not depend on a
+        // third-party service being up, so a `quest` lookup should still
+        // answer from it rather than dropping the feature's most valuable
+        // data for an unrelated outage.
+        let raw: Awaited<ReturnType<typeof fetchWikiSync>> = null;
+        let wikiSyncError: unknown = null;
         try {
-          const raw = await fetchWikiSync(this.env, player);
-          if (!raw) return text(`No WikiSync data for "${player}". ${WIKISYNC_HELP}`);
-
-          const progress = parseWikiSync(raw, player);
-          const snapshot = await readQuests(this.env.WIKI_CACHE, player);
-
-          if (quest) {
-            return text(
-              JSON.stringify(questReport(quest, snapshot, progress.quests, Date.now()), null, 2),
-            );
-          }
-
-          return text(
-            JSON.stringify(
-              {
-                ...progress,
-                journals_available: Object.values(snapshot?.journals ?? {}).map((j) => j.quest),
-              },
-              null,
-              2,
-            ),
-          );
+          raw = await fetchWikiSync(this.env, player);
         } catch (error) {
-          return text(`Could not reach WikiSync for "${player}": ${describe(error)}`);
+          wikiSyncError = error;
+        }
+
+        if (raw) {
+          try {
+            const progress = parseWikiSync(raw, player);
+            const snapshot = await readQuests(this.env.WIKI_CACHE, player);
+
+            if (quest) {
+              return text(
+                JSON.stringify(questReport(quest, snapshot, progress.quests, Date.now()), null, 2),
+              );
+            }
+
+            return text(
+              JSON.stringify(
+                {
+                  ...progress,
+                  journals_available: Object.values(snapshot?.journals ?? {}).map((j) => j.quest),
+                },
+                null,
+                2,
+              ),
+            );
+          } catch (error) {
+            return text(`Could not reach WikiSync for "${player}": ${describe(error)}`);
+          }
+        }
+
+        const wikiSyncNote = wikiSyncError
+          ? `Could not reach WikiSync for "${player}": ${describe(wikiSyncError)}. Quest ` +
+            "completion and diary state could not be fetched."
+          : `No WikiSync data for "${player}". ${WIKISYNC_HELP} Quest completion and diary ` +
+            "state could not be fetched.";
+
+        if (!quest) return text(wikiSyncNote);
+
+        // No WikiSync bucket to report, but the player's own stored journal
+        // and progress var (if any) are still worth returning. Passing empty
+        // lists makes `questReport` derive `state: null` rather than a
+        // guessed bucket.
+        try {
+          const snapshot = await readQuests(this.env.WIKI_CACHE, player);
+          const report = questReport(
+            quest,
+            snapshot,
+            { completed: [], in_progress: [], not_started: [] },
+            Date.now(),
+          );
+          return text(JSON.stringify({ ...report, wikisync_note: wikiSyncNote }, null, 2));
+        } catch (error) {
+          return text(`Could not read stored quest data for "${player}": ${describe(error)}`);
         }
       },
     );

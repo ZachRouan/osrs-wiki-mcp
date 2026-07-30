@@ -57,6 +57,21 @@ describe("parseJournalLines", () => {
     expect(line.text).toHaveLength(200);
   });
 
+  it("drops a tag left dangling by the plugin's 200-char raw cutoff", () => {
+    // The plugin truncates the raw line at 200 characters including markup,
+    // which can land mid-tag. `<col=7f00` never closes, so the complete-tag
+    // regex alone leaves it sitting in the visible text.
+    expect(
+      parseJournalLines(["Retrieve the pieces of the Dragonkin Cog. <col=7f00"])[0].text,
+    ).toBe("Retrieve the pieces of the Dragonkin Cog.");
+  });
+
+  it("does not touch a complete tag that legitimately ends the line", () => {
+    expect(parseJournalLines(["<str>I spoke to Ali the Wise.</str>"])[0].text).toBe(
+      "I spoke to Ali the Wise.",
+    );
+  });
+
   it("parses every real capture without producing empty or marked-up text", () => {
     for (const capture of captures) {
       const parsed = parseJournalLines(capture.lines);
