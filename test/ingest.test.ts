@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { handleIngest, type IngestConfig } from "../src/ingest";
 import { readAllContainers, readContainer, readSyncIndex, storeContainers, WRITE_THROTTLE_MS } from "../src/item-store";
-import type { IngestPayload, ItemStack } from "../src/items";
+import { MAX_JOURNAL_LINE_CHARS, type IngestPayload, type ItemStack } from "../src/items";
 
 const payload = JSON.parse(
   readFileSync(fileURLToPath(new URL("fixtures/item-sync-payload.json", import.meta.url)), "utf8"),
@@ -103,9 +103,13 @@ describe("ingest validation", () => {
     const response = await handleIngest(post({ username: "IronExample" }), config);
     expect(response.status).toBe(400);
 
-    const body = (await response.json()) as { issues: Array<{ path: string }> };
+    const body = (await response.json()) as { issues: Array<{ path: string; message: string }> };
     expect(body.issues.length).toBeGreaterThan(0);
-    expect(body.issues.some((i) => i.path.includes("containers"))).toBe(true);
+    expect(
+      body.issues.some(
+        (i) => i.message.includes("container") && i.message.includes("journal") && i.message.includes("progress"),
+      ),
+    ).toBe(true);
   });
 
   it("rejects an oversized body", async () => {
@@ -423,5 +427,19 @@ describe("quest payload acceptance", () => {
       quest_journal: { quest: "X", lines: Array.from({ length: 400 }, () => "line") },
     };
     expect((await handleIngest(post(tooMany), config)).status).toBe(400);
+  });
+
+  it("rejects a journal line longer than the interface can hold", async () => {
+    const tooLong = {
+      username: "questtest",
+      quest_journal: { quest: "X", lines: ["a".repeat(MAX_JOURNAL_LINE_CHARS + 1)] },
+    };
+    expect((await handleIngest(post(tooLong), config)).status).toBe(400);
+  });
+
+  it("rejects an empty containers object with no quest data", async () => {
+    const response = await handleIngest(post({ username: "questtest", containers: {} }), config);
+    expect(response.status).toBe(400);
+    expect(kv.writes).toEqual([]);
   });
 });

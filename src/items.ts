@@ -116,10 +116,7 @@ export const ingestPayloadSchema = z
       (p.containers !== undefined && CONTAINERS.some((name) => p.containers?.[name] !== undefined)) ||
       p.quest_journal !== undefined ||
       p.quests_in_progress !== undefined,
-    {
-      message: "push must include a container, a quest journal or quest progress",
-      path: ["containers"],
-    },
+    { message: "push must include a container, a quest journal or quest progress" },
   );
 
 export type IngestPayload = z.infer<typeof ingestPayloadSchema>;
