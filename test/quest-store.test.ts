@@ -51,16 +51,38 @@ describe("storeQuests", () => {
     expect(Object.keys((await readQuests(kv, "questtest"))!.journals)).toEqual(["romeo juliet"]);
   });
 
-  it("skips the write when nothing changed", async () => {
+  it("skips the write when the in-progress vars are unchanged", async () => {
+    // A vars-only push rides every bank and equipment sync, so unlike a
+    // journal capture it must dedupe or it would burn the write budget on
+    // every container sync.
+    const payload = {
+      username: "questtest",
+      quests_in_progress: [{ quest: "A Quest", progress_var: 3 }],
+    } as IngestPayload;
+    expect(await storeQuests(kv, payload, T0)).toBe("stored");
+    const before = kv.writes.length;
+    expect(await storeQuests(kv, payload, T0 + 60_000)).toBe("unchanged");
+    expect(kv.writes.length).toBe(before);
+  });
+
+  it("always writes a re-captured journal, even when the text is identical, refreshing captured_at", async () => {
+    // A journal capture is never deduped: captured_at must mean "the last
+    // time we saw this text and it was current", not "the last time it
+    // changed" — otherwise a journal reconfirmed a moment ago would still
+    // report as stale.
     await storeQuests(kv, journalPush("A Quest", ["line"], 3), T0);
     const before = kv.writes.length;
-    expect(await storeQuests(kv, journalPush("A Quest", ["line"], 3), T0 + 60_000)).toBe("unchanged");
-    expect(kv.writes.length).toBe(before);
+    expect(await storeQuests(kv, journalPush("A Quest", ["line"], 3), T0 + 60_000)).toBe("stored");
+    expect(kv.writes.length).toBe(before + 1);
+    const journal = (await readQuests(kv, "questtest"))!.journals["a quest"];
+    expect(journal.captured_at).toBe(new Date(T0 + 60_000).toISOString());
   });
 
   it("stores identical text when only the progress var moved", async () => {
     // The trap: journal text can be byte-identical while the quest has moved on.
-    // Deduping on text alone would serve stale steps under a fresh timestamp.
+    // A journal capture always writes now, so this no longer discriminates a
+    // dedupe path — but it still pins that the newer progress_var is the one
+    // persisted, not the stale one from the first capture.
     await storeQuests(kv, journalPush("A Quest", ["line"], 3), T0);
     expect(await storeQuests(kv, journalPush("A Quest", ["line"], 9), T0 + 60_000)).toBe("stored");
     expect((await readQuests(kv, "questtest"))!.journals["a quest"].progress_var).toBe(9);

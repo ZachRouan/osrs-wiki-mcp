@@ -47,7 +47,15 @@ export async function readQuests(kv: ItemKV, username: string): Promise<QuestSna
  * Unlike the containers there is no write throttle here. A throttled container
  * push is harmless because the next sync resends it; a journal capture is not
  * resent, so dropping it would lose the data outright. Journal opens are manual
- * and rare, so they cannot storm the write budget. Dedupe still applies.
+ * and rare, so they cannot storm the write budget.
+ *
+ * A journal capture is not deduped either: `captured_at` must mean "the last
+ * time we saw this text and it was current", not "the last time it changed".
+ * For the six quests with no progress var, age is the only staleness signal
+ * the tool has, so a journal reconfirmed a moment ago must not report as days
+ * old just because its text happened not to move. Vars-only pushes still
+ * dedupe, because they ride every bank and equipment sync and would otherwise
+ * write on every one of them.
  */
 export async function storeQuests(
   kv: ItemKV,
@@ -61,6 +69,23 @@ export async function storeQuests(
   const capturedAt = new Date(nowMs).toISOString();
   const existing = await readQuests(kv, payload.username);
 
+  if (journal === undefined) {
+    // Vars-only push: dedupe, since this rides every container sync.
+    if (existing && JSON.stringify(existing.in_progress) === JSON.stringify(inProgress)) {
+      return "unchanged";
+    }
+
+    const snapshot: QuestSnapshot = {
+      username: payload.username,
+      updated_at: capturedAt,
+      in_progress: inProgress ?? [],
+      journals: existing?.journals ?? {},
+    };
+    await kv.put(journalKey(payload.username), JSON.stringify(snapshot));
+    return "stored";
+  }
+
+  // A journal capture: always write, refreshing captured_at.
   const snapshot: QuestSnapshot = {
     username: payload.username,
     updated_at: capturedAt,
@@ -68,39 +93,15 @@ export async function storeQuests(
     journals: { ...(existing?.journals ?? {}) },
   };
 
-  if (journal) {
-    const slug = questSlug(journal.quest);
-    const candidate: StoredJournal = {
-      quest: journal.quest,
-      captured_at: capturedAt,
-      client_timestamp: payload.timestamp ?? null,
-      progress_var: journal.progress_var ?? null,
-      lines: parseJournalLines(journal.lines),
-    };
-
-    // Reuse the previous entry (and its captured_at) when nothing about the
-    // journal actually changed. Rebuilding it with a fresh timestamp on every
-    // push would make the dedupe check below always see a diff and defeat it.
-    const previousJournal = existing?.journals[slug];
-    const unchanged =
-      previousJournal !== undefined &&
-      previousJournal.quest === candidate.quest &&
-      previousJournal.progress_var === candidate.progress_var &&
-      JSON.stringify(previousJournal.lines) === JSON.stringify(candidate.lines);
-
-    snapshot.journals[slug] = unchanged ? previousJournal : candidate;
-  }
+  snapshot.journals[questSlug(journal.quest)] = {
+    quest: journal.quest,
+    captured_at: capturedAt,
+    client_timestamp: payload.timestamp ?? null,
+    progress_var: journal.progress_var ?? null,
+    lines: parseJournalLines(journal.lines),
+  };
 
   evictOldest(snapshot.journals);
-
-  // Compare everything but `updated_at`, which changes on every push by
-  // definition and would defeat the check.
-  const { updated_at: _ignored, ...compared } = snapshot;
-  const previous = existing ? { ...existing, updated_at: capturedAt } : null;
-  if (previous) {
-    const { updated_at: _also, ...previousCompared } = previous;
-    if (JSON.stringify(previousCompared) === JSON.stringify(compared)) return "unchanged";
-  }
 
   await kv.put(journalKey(payload.username), JSON.stringify(snapshot));
   return "stored";
