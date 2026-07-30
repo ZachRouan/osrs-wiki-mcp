@@ -24,7 +24,7 @@ instead of a confident guess.
 | Tool | Source | Returns |
 | --- | --- | --- |
 | `get_player_stats` | Jagex hiscores | Live levels, XP, combat level, boss KC |
-| `get_quest_progress` | WikiSync | Quest states and diary progress |
+| `get_quest_progress` | WikiSync | Quest states and diary progress; pass `quest` for that quest's own journal text and staleness |
 | `get_gains` | Wise Old Man | XP/KC gained over day, week, month or year |
 | `get_account_summary` | all three | Combined snapshot — call this first |
 
@@ -201,7 +201,7 @@ effects on the strength of these checks alone.
 
 ```bash
 npm run dev        # http://localhost:8787
-npm test           # 169 tests
+npm test           # 209 tests
 npm run typecheck
 npm run smoke      # hits the live player APIs — not part of npm test
 ```

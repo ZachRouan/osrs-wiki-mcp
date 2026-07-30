@@ -51,7 +51,7 @@ Cloudflare Worker  (TypeScript, Agents SDK McpAgent)  ◄───────�
 | Tool | Source | Output |
 |---|---|---|
 | `get_player_stats` | Jagex hiscores | levels, XP, combat level, boss KC |
-| `get_quest_progress` | WikiSync | quest states, diary progress |
+| `get_quest_progress` | WikiSync | quest states, diary progress; `quest?` — that quest's own journal text and staleness |
 | `get_gains` | Wise Old Man | XP/KC gained over day/week/month/year |
 | `get_account_summary` | all three | combined snapshot, tolerates partial failure |
 
@@ -89,6 +89,14 @@ CSV or JSON, so status has to decide the outcome before anything is parsed.
 
 **WikiSync answers `HTTP 400`** with `{"code":"NO_USER_DATA"}` for an unsynced player, not the
 404 the plan assumed.
+
+**WikiSync only ever uploads three quest states.** The plan assumed a player's exact progress
+within an in-progress quest — which step they are on — could eventually be read back from
+WikiSync alongside its 0/not-started, 1/in-progress, 2/completed encoding. It can't: the RuneLite
+WikiSync plugin buckets every quest down to those three states before it ever leaves the client, so
+the granular number never reaches its API at all. The quest journal feature exists because of this
+gap — the Item Sync plugin has to read the player's own in-game journal text and progress var
+directly, since WikiSync structurally cannot supply it.
 
 **Boss killcounts and activities are mixed in one hiscores list.** `PvP Arena - Rank 2289` means
 rank 2289, not 2289 kills. Reporting it as a boss made an assistant invent a killcount, so the two
@@ -200,7 +208,7 @@ metadata is obvious at a glance.
   caching, SQLite-backed Durable Objects for sessions. All within the free tier.
 - **Item sync:** a RuneLite plugin in Java, in its own public repo so it could be submitted to the
   Plugin Hub. It stays there as the canonical copy even though the submission was declined.
-- **Testing:** Vitest, 169 tests against committed real fixtures, plus 10 JUnit tests pinning the
+- **Testing:** Vitest, 209 tests against committed real fixtures, plus 23 JUnit tests pinning the
   plugin's JSON against the Worker's schema. The infobox parser was written
   test-first. `npm run smoke` hits the live player APIs and is deliberately outside `npm test`,
   since it depends on third-party services and current account state.
