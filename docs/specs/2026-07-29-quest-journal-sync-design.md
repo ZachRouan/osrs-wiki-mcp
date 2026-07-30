@@ -90,7 +90,7 @@ player opens a quest journal page
   → POST to the already-configured endpoint
       quest_journal:       { quest, progress_var, lines[] }
       quests_in_progress:  [ { quest, progress_var } ]   ← on every sync
-  → Worker parses markup, stores under journal:<user>
+  → Worker parses markup, stores under quests:<user>
   → get_quest_progress(quest) joins journal + WikiSync bucket + live var
 ```
 
@@ -220,10 +220,10 @@ matches the wire shape directly.
 
 ## Worker changes
 
-### `quest-journal.ts` (new)
+### `quests.ts` (new)
 
-Pure parsing, no KV or Worker globals, so it is testable under plain Node like
-`items.ts`:
+Pure quest logic — parsing, schemas, key and name matching — with no KV and no
+Worker globals, so it is testable under plain Node like `items.ts`:
 
 - Strip RuneScape markup — `<str>`, `<col=…>`, `<br>` and friends.
 - Derive a per-line `done` flag from whether the line is struck through.
@@ -234,31 +234,39 @@ markup the journal uses for a completed step is the main unknown in this design,
 and a wrong guess should cost a `wrangler deploy`, not a plugin rebuild and a
 client restart.
 
-### `journal-store.ts` (new)
+### `quest-store.ts` (new)
 
-One KV key per player, `journal:<normalised-username>`, holding a map of quest
-to `{ quest, captured_at, client_timestamp, progress_var, lines }`.
+One KV key per player, `quests:<normalised-username>`, holding both the stored
+journals — a map of quest slug to
+`{ quest, captured_at, client_timestamp, progress_var, lines }` — and the
+in-progress vars.
 
 One key rather than one per quest, because a capture then costs a single write
-and needs no index to answer "which quests have journals". Capped at 25 quests,
-evicting the oldest by `captured_at`. Reuses the container conventions:
-content-hash dedupe so re-opening an unchanged journal does not rewrite, and the
-same `WRITE_THROTTLE_MS` 5s throttle. Written with no TTL, like the containers,
-so journals do not go dark between play sessions.
+and needs no index to answer "which quests have journals". Capped at 25
+journals, evicting the oldest by `captured_at`. Dedupe skips the write when
+nothing changed, so re-opening an unchanged journal costs nothing. Written with
+no TTL, like the containers, so journals do not go dark between play sessions.
 
 The write budget is the reason for the care: the free KV tier allows 1,000
 writes per day shared with the wiki cache. Journal opens are manual and rare, so
 one write per open is affordable; an index doubling that is not worth it.
 
+**A journal capture is not write-throttled**, unlike a container push. The
+container throttle is safe because a dropped push is resent by the next sync; a
+journal capture is never resent, so throttling one would lose it outright.
+Manual journal opens cannot storm the budget.
+
 ### Progress vars
 
 `quests_in_progress` is small — five entries for the current account — and
-changes as the player progresses. It is stored in the existing per-player sync
-index rather than a key of its own, and a change to the vars marks that index
-dirty. In practice this costs no additional write: the index is already
-rewritten on any sync carrying a container, because refreshing `received_at`
-marks it dirty regardless. The one new case is a journal-only or vars-only sync,
-which writes the index alone.
+changes only as the player actually progresses a quest, so dedupe suppresses the
+write on the overwhelming majority of syncs.
+
+It lives in the same `quests:` value as the journals rather than in the
+container sync index. Two modules writing one key is a lost-update hazard, and
+keeping it here leaves the sync index purely about containers. The cost is that
+a journal-only or vars-only push writes this key on its own, which is the
+correct trade for not corrupting the item index.
 
 ### Ingest
 
@@ -329,9 +337,9 @@ rather than an open question.
 
 Worker, under Vitest, following the existing suites:
 
-- `quest-journal.ts` parsing: markup stripping, the `done` flag, whitespace
+- `quests.ts` parsing: markup stripping, the `done` flag, whitespace
   collapse, empty-line dropping, bounds.
-- `journal-store.ts` against the existing `FakeKV` harness: first store, dedupe
+- `quest-store.ts` against the existing `FakeKV` harness: first store, dedupe
   on unchanged content, throttle, eviction at the 25-quest cap, and the trap
   case — a journal whose text is byte-identical but whose `progress_var` moved
   must still be stored, exactly as the rune pouch case required folding extras
