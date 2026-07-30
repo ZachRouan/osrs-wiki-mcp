@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-import { parseJournalLines, questSlug } from "../src/quests";
+import { matchQuest, parseJournalLines, questSlug } from "../src/quests";
 
 const { captures } = JSON.parse(
   readFileSync(fileURLToPath(new URL("fixtures/quest-journal-raw.json", import.meta.url)), "utf8"),
@@ -91,5 +91,43 @@ describe("questSlug", () => {
     expect(questSlug("Desert Treasure II - The Fallen Empire")).toBe(
       "desert treasure ii the fallen empire",
     );
+  });
+});
+
+describe("matchQuest", () => {
+  const names = [
+    "While Guthix Sleeps",
+    "Desert Treasure I",
+    "Desert Treasure II - The Fallen Empire",
+    "Sins of the Father",
+  ];
+
+  it("matches exactly regardless of case and punctuation", () => {
+    expect(matchQuest("while guthix sleeps", names).matched).toBe("While Guthix Sleeps");
+    expect(matchQuest("Desert Treasure 1", names).matched).toBe(null);
+    expect(matchQuest("Sins of the Father!", names).matched).toBe("Sins of the Father");
+  });
+
+  it("matches a unique substring", () => {
+    expect(matchQuest("guthix sleeps", names).matched).toBe("While Guthix Sleeps");
+  });
+
+  it("prefers an exact match over a substring one", () => {
+    // "Desert Treasure I" is also a substring of the sequel's name, so a
+    // substring-first rule would resolve the exact name to the wrong quest.
+    expect(matchQuest("Desert Treasure I", names).matched).toBe("Desert Treasure I");
+  });
+
+  it("reports ambiguity with candidates instead of guessing", () => {
+    const result = matchQuest("desert treasure", names);
+    expect(result.matched).toBe(null);
+    expect(result.candidates).toEqual([
+      "Desert Treasure I",
+      "Desert Treasure II - The Fallen Empire",
+    ]);
+  });
+
+  it("returns nothing for an unknown quest", () => {
+    expect(matchQuest("nonexistent quest", names)).toEqual({ matched: null, candidates: [] });
   });
 });

@@ -66,3 +66,29 @@ export function questSlug(quest: string): string {
     .trim()
     .replace(/\s+/g, " ");
 }
+
+export interface QuestMatch {
+  /** The single quest this resolves to, or null when it does not resolve. */
+  matched: string | null;
+  /** Populated only when several quests matched, so the caller can say which. */
+  candidates: string[];
+}
+
+/**
+ * Resolve a quest name leniently, because a model should not have to reproduce
+ * the wiki's exact punctuation. Exact wins over substring: "Desert Treasure I"
+ * is itself a substring of the sequel, so a substring-first rule would resolve
+ * the exact name to the wrong quest. Several matches report the ambiguity
+ * rather than picking one.
+ */
+export function matchQuest(query: string, names: string[]): QuestMatch {
+  const wanted = questSlug(query);
+  if (wanted === "") return { matched: null, candidates: [] };
+
+  const exact = names.find((name) => questSlug(name) === wanted);
+  if (exact) return { matched: exact, candidates: [] };
+
+  const partial = names.filter((name) => questSlug(name).includes(wanted));
+  if (partial.length === 1) return { matched: partial[0], candidates: [] };
+  return { matched: null, candidates: partial };
+}
