@@ -243,18 +243,27 @@ in-progress vars.
 
 One key rather than one per quest, because a capture then costs a single write
 and needs no index to answer "which quests have journals". Capped at 25
-journals, evicting the oldest by `captured_at`. Dedupe skips the write when
-nothing changed, so re-opening an unchanged journal costs nothing. Written with
-no TTL, like the containers, so journals do not go dark between play sessions.
+journals, evicting the oldest by `captured_at`. Written with no TTL, like the
+containers, so journals do not go dark between play sessions.
+
+**A journal capture always writes, refreshing `captured_at`.** Dedupe is applied
+only to a push carrying just `quests_in_progress`, which rides every bank and
+equipment sync and would otherwise write constantly. Deduping captures too was
+the original design and was wrong: it made `captured_at` mean "when this text
+last changed", so re-opening an unchanged journal left the tool reporting it as
+days old moments after the player confirmed it was current. For the six quests
+with no progress var, age is the only staleness signal available, so it has to
+mean "the last time we saw this text and it was current".
 
 The write budget is the reason for the care: the free KV tier allows 1,000
 writes per day shared with the wiki cache. Journal opens are manual and rare, so
 one write per open is affordable; an index doubling that is not worth it.
 
-**A journal capture is not write-throttled**, unlike a container push. The
-container throttle is safe because a dropped push is resent by the next sync; a
-journal capture is never resent, so throttling one would lose it outright.
-Manual journal opens cannot storm the budget.
+**A journal capture is neither throttled nor deduped**, unlike a container push.
+The container throttle is safe because a dropped push is resent by the next
+sync; a journal capture is never resent, so throttling one would lose it
+outright. Manual journal opens cannot storm the budget: at roughly 5-20 a day
+against 1,000, buying accurate freshness with a write is the right trade.
 
 ### Progress vars
 
