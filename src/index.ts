@@ -9,7 +9,9 @@ import { parseInfoboxes } from "./infobox";
 import {
   checkMaterials,
   CONTAINERS,
+  type ContainerName,
   describeAge,
+  type InventoryExtras,
   renderItemLines,
   searchItems,
   topByQuantity,
@@ -67,6 +69,38 @@ function text(body: string) {
 
 function formatHits(hits: Array<{ title: string; snippet: string }>): string {
   return hits.map((hit) => `${hit.title}\n  ${hit.snippet || "(no snippet)"}`).join("\n\n");
+}
+
+/**
+ * Report inventory occupancy honestly.
+ *
+ * The plugin merges stacks by item id, so the stored list's length is a count of
+ * item types: four karambwans fill four slots but arrive as one entry. Real slot
+ * counts are sent separately. When they are missing — a snapshot written by an
+ * older plugin — the count is named for what it actually is rather than being
+ * passed off as slots, because "24 of 28 used" invents four free slots.
+ */
+function inventorySlots(
+  extras: InventoryExtras | undefined,
+  distinctItems: number,
+): Record<string, number | string> {
+  const used = extras?.slots_used;
+  const total = extras?.slots_total;
+
+  if (used === null || used === undefined) {
+    return {
+      distinct_items: distinctItems,
+      slots_note:
+        "This snapshot predates slot reporting. Stacks are merged by item type, " +
+        "so the real number of occupied slots is at least this and may be higher.",
+    };
+  }
+
+  return {
+    slots_used: used,
+    ...(total ? { slots_total: total, slots_free: total - used } : {}),
+    distinct_items: distinctItems,
+  };
 }
 
 function formatCoins(amount: number | null): string {
@@ -604,8 +638,15 @@ export class OsrsWikiMCP extends McpAgent<Env> {
                   ? {
                       snapshot_age: describeAge(inventory.received_at, now),
                       synced_at: inventory.received_at,
-                      slots_used: inventory.items.length,
+                      // The item list merges stacks by id, so its length counts
+                      // item types, not slots. Real slot counts come from the
+                      // plugin; older snapshots have none, and saying "24 types"
+                      // is better than implying 4 free slots that do not exist.
+                      ...inventorySlots(inventory.extras, inventory.items.length),
                       items: inventory.items,
+                      ...(inventory.extras?.pouch_contents
+                        ? { rune_pouch: inventory.extras.pouch_contents }
+                        : {}),
                     }
                   : { note: "No inventory snapshot has been received." },
               },
@@ -653,19 +694,24 @@ export class OsrsWikiMCP extends McpAgent<Env> {
           const now = Date.now();
           const results = checkMaterials(containers, items);
 
+          // A carried rune pouch is searched too, and its runes count toward the
+          // totals, so it has to appear here or the totals look unexplained. It
+          // travels inside the inventory snapshot, hence the inventory's age.
+          const searched: string[] = [...present];
+          if (containers.rune_pouch) searched.push("rune_pouch");
+
+          const ageOf = (source: string) => {
+            const container = source === "rune_pouch" ? "inventory" : (source as ContainerName);
+            const entry = index?.containers[container];
+            return entry ? describeAge(entry.received_at, now) : "unknown age";
+          };
+
           return text(
             JSON.stringify(
               {
                 username: player,
-                searched_containers: present,
-                snapshot_ages: Object.fromEntries(
-                  present.map((c) => [
-                    c,
-                    index?.containers[c]
-                      ? describeAge(index.containers[c]!.received_at, now)
-                      : "unknown age",
-                  ]),
-                ),
+                searched_sources: searched,
+                snapshot_ages: Object.fromEntries(searched.map((s) => [s, ageOf(s)])),
                 have_all: results.every((result) => result.have),
                 missing: results.filter((result) => !result.have).map((result) => result.item),
                 results,

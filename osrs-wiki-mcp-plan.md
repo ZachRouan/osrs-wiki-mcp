@@ -61,8 +61,8 @@ since no public API exposes container contents
 | Tool | Input | Output |
 |---|---|---|
 | `get_bank` | `search?`, `full?` | matching items with quantities, a summary when unfiltered, or every stack as lines when `full` |
-| `get_equipment` | — | worn gear by slot, plus inventory |
-| `check_materials` | `items[]` | owned quantity of each, across all containers |
+| `get_equipment` | — | worn gear by slot, plus inventory slots and rune pouch |
+| `check_materials` | `items[]` | owned quantity of each, across bank, inventory, worn gear and rune pouch |
 
 ## What the plan got wrong
 
@@ -117,6 +117,25 @@ tokens instead of ~14,500, so `full` returns lines and drops the ids — every t
 these names (`ge_price`, `check_materials`, `get_infobox`) resolves by name anyway. The 12,000-char
 prose limit would have cut a real bank in half, so this path carries its own 60,000-char cap and
 reports what it dropped.
+
+**Merged stacks are not slots.** `get_equipment` reported `slots_used: inventory.items.length`,
+but the plugin merges stacks by canonical id, so that counts item types. A live inventory showing
+24 was actually 28 of 28 full: Prayer potion(3) x2 and Cooked karambwan x4 are non-stackable and
+each occupy one slot per item. The tool was inventing four free slots. Slot counts cannot be
+recovered from a merged list, so the plugin now counts them on the raw slot array and sends the
+container size too. Equipment was never affected — it is slot-keyed and explicitly never merged.
+
+**A rune pouch is invisible to container reads.** The inventory reports it as one opaque item.
+RuneLite's own overlay reads six `RUNE_POUCH_TYPE_n`/`RUNE_POUCH_QUANTITY_n` varbit pairs, where
+the type varbit is an *index into enum `RUNEPOUCH_RUNE` (982)*, not an item id — resolving it as an
+id would name the wrong rune. `net.runelite.api.Varbits` is deprecated in favour of gameval
+`VarbitID`, which carries all six pairs at identical values. The varbits also persist after the
+pouch is banked, so contents are sent only while a pouch is carried.
+
+**A content hash must cover everything stored under the key.** Pouch runes drain while the
+inventory item list stays byte-identical, so hashing items alone deduped that write away and served
+stale runes under a fresh snapshot age — the same failure shape as the bank that vanished. The
+inventory hash now folds in the slot counts and pouch contents.
 
 **The GE mapping is tradeables-only.** Coins, Fire cape, Dragon defender and Barrows gloves have no
 entry, but RuneLite reports them — anything assuming the mapping covers every item silently loses
@@ -181,7 +200,7 @@ metadata is obvious at a glance.
   caching, SQLite-backed Durable Objects for sessions. All within the free tier.
 - **Item sync:** a RuneLite plugin in Java, in its own public repo so it could be submitted to the
   Plugin Hub. It stays there as the canonical copy even though the submission was declined.
-- **Testing:** Vitest, 152 tests against committed real fixtures, plus 5 JUnit tests pinning the
+- **Testing:** Vitest, 169 tests against committed real fixtures, plus 10 JUnit tests pinning the
   plugin's JSON against the Worker's schema. The infobox parser was written
   test-first. `npm run smoke` hits the live player APIs and is deliberately outside `npm test`,
   since it depends on third-party services and current account state.

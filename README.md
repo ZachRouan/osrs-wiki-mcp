@@ -33,8 +33,8 @@ instead of a confident guess.
 | Tool | Input | Returns |
 | --- | --- | --- |
 | `get_bank` | `search?`, `full?`, `username?` | Matching bank items with quantities and snapshot age; `full` lists the whole bank |
-| `get_equipment` | `username?` | Worn gear by slot, plus inventory |
-| `check_materials` | `items[]`, `username?` | Owned quantity of each named item across all containers |
+| `get_equipment` | `username?` | Worn gear by slot, plus inventory with real slot counts and rune pouch |
+| `check_materials` | `items[]`, `username?` | Owned quantity of each named item across bank, inventory, worn gear and rune pouch |
 
 The player tools exist so an assistant stops asking "what's your Slayer level?" and stops
 trusting levels mentioned earlier in a conversation. Levels change while you play.
@@ -113,6 +113,18 @@ of implying you were idle.
 own public repo so the Plugin Hub can build it. Until a snapshot arrives, all three return setup
 instructions rather than an error.
 
+Two things the containers cannot say for themselves. The plugin merges stacks by item id, so an
+inventory list's length counts item *types*, not slots — four karambwans fill four slots but arrive
+as one entry. It therefore sends `inventory_slots_used` and `inventory_slots_total` counted before
+merging, and `get_equipment` reports `slots_free` from them. Snapshots stored before this existed
+report `distinct_items` with a note instead, rather than passing a type count off as a slot count.
+
+A carried rune pouch is one opaque inventory item, so the plugin reads its runes from varbits and
+sends them as `pouch_contents`. They are stored inside the inventory snapshot — no extra KV key, and
+no way for the two to disagree — and `check_materials` counts them as a `rune_pouch` source. The
+inventory's content hash folds them in, because draining pouch runes leaves the item list identical
+and would otherwise be deduped away and served stale under a fresh snapshot age.
+
 `get_bank` answers three ways. With `search` it returns matching stacks as JSON; with neither
 argument it returns a 50-stack summary; with `full` it lists every stack as `Name xQuantity` lines,
 largest first. The line format exists because it is roughly four times cheaper than the equivalent
@@ -189,7 +201,7 @@ effects on the strength of these checks alone.
 
 ```bash
 npm run dev        # http://localhost:8787
-npm test           # 152 tests
+npm test           # 169 tests
 npm run typecheck
 npm run smoke      # hits the live player APIs — not part of npm test
 ```

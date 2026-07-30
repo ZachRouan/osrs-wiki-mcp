@@ -281,3 +281,110 @@ describe("write guards", () => {
     expect((await readContainer(kv, "IronExample", "equipment"))!.count).toBe(3);
   });
 });
+
+describe("inventory slots and rune pouch", () => {
+  const pouchPayload = (
+    runes: ItemStack[],
+    slotsUsed = 28,
+  ): IngestPayload => ({
+    username: "pouchtest",
+    containers: {
+      inventory: [
+        { id: 12791, name: "Rune pouch", quantity: 1 },
+        { id: 3144, name: "Cooked karambwan", quantity: 4 },
+      ],
+    },
+    inventory_slots_used: slotsUsed,
+    inventory_slots_total: 28,
+    pouch_contents: runes,
+  });
+
+  it("stores slot counts and pouch contents beside the inventory", async () => {
+    await storeContainers(kv, pouchPayload([{ id: 563, name: "Law rune", quantity: 12 }]), 1_000);
+
+    const stored = await readContainer(kv, "pouchtest", "inventory");
+    expect(stored?.extras).toEqual({
+      slots_used: 28,
+      slots_total: 28,
+      pouch_contents: [{ id: 563, name: "Law rune", quantity: 12 }],
+    });
+    // No container of its own: the pouch costs no extra KV key. Checked as an
+    // exact key set, since the test username itself contains "pouch".
+    expect([...kv.writes].sort()).toEqual([
+      "items:pouchtest:inventory",
+      "items:pouchtest:last_sync",
+    ]);
+  });
+
+  it("rewrites the snapshot when only the pouch changed", async () => {
+    const t0 = 1_000_000;
+    await storeContainers(kv, pouchPayload([{ id: 563, name: "Law rune", quantity: 12 }]), t0);
+
+    // Same inventory items, fewer runes — casting spells drains the pouch while
+    // the inventory list is byte-identical.
+    const later = t0 + WRITE_THROTTLE_MS + 1;
+    const result = await storeContainers(
+      kv,
+      pouchPayload([{ id: 563, name: "Law rune", quantity: 3 }]),
+      later,
+    );
+
+    expect(result.outcomes.inventory).toBe("stored");
+    const stored = await readContainer(kv, "pouchtest", "inventory");
+    expect(stored?.extras?.pouch_contents).toEqual([{ id: 563, name: "Law rune", quantity: 3 }]);
+  });
+
+  it("still dedupes when nothing changed at all", async () => {
+    const t0 = 2_000_000;
+    const runes = [{ id: 563, name: "Law rune", quantity: 12 }];
+    await storeContainers(kv, pouchPayload(runes), t0);
+    const result = await storeContainers(kv, pouchPayload(runes), t0 + WRITE_THROTTLE_MS + 1);
+
+    expect(result.outcomes.inventory).toBe("unchanged");
+  });
+
+  it("rewrites when only the slot count changed", async () => {
+    const t0 = 3_000_000;
+    const runes = [{ id: 563, name: "Law rune", quantity: 12 }];
+    await storeContainers(kv, pouchPayload(runes, 28), t0);
+    const result = await storeContainers(
+      kv,
+      pouchPayload(runes, 20),
+      t0 + WRITE_THROTTLE_MS + 1,
+    );
+
+    expect(result.outcomes.inventory).toBe("stored");
+    expect((await readContainer(kv, "pouchtest", "inventory"))?.extras?.slots_used).toBe(20);
+  });
+
+  it("exposes the pouch as its own material source", async () => {
+    await storeContainers(kv, pouchPayload([{ id: 563, name: "Law rune", quantity: 12 }]), 1_000);
+
+    const sources = await readAllContainers(kv, "pouchtest");
+    expect(sources.rune_pouch).toEqual([{ id: 563, name: "Law rune", quantity: 12 }]);
+    expect(sources.inventory).toHaveLength(2);
+  });
+
+  it("omits the pouch source when no pouch is carried", async () => {
+    await storeContainers(
+      kv,
+      { username: "nopouch", containers: { inventory: [{ id: 995, name: "Coins", quantity: 5 }] } },
+      1_000,
+    );
+
+    const sources = await readAllContainers(kv, "nopouch");
+    expect(sources.rune_pouch).toBeUndefined();
+  });
+
+  it("accepts a push with no slot or pouch fields, as an older plugin sends", async () => {
+    const response = await handleIngest(post(payload), config);
+    expect(response.status).toBe(200);
+
+    const stored = await readContainer(kv, payload.username, "inventory");
+    expect(stored?.extras).toEqual({
+      slots_used: null,
+      slots_total: null,
+      pouch_contents: null,
+    });
+  });
+})

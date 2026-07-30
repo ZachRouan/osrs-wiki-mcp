@@ -6,6 +6,7 @@ import {
   checkMaterials,
   containerKey,
   describeAge,
+  extrasFingerprint,
   hashItems,
   ingestPayloadSchema,
   type ItemStack,
@@ -375,5 +376,109 @@ describe("checkMaterials", () => {
     const [topaz] = checkMaterials({ bank }, ["Red topaz"]);
     expect(topaz.owned).toBe(14);
     expect(checkMaterials({}, ["Red topaz"])[0].have).toBe(false);
+  });
+});
+
+describe("checkMaterials counts a carried rune pouch", () => {
+  it("adds pouch runes to the total and names the pouch as a source", () => {
+    const result = checkMaterials(
+      {
+        bank: [{ id: 563, name: "Law rune", quantity: 300 }],
+        rune_pouch: [{ id: 563, name: "Law rune", quantity: 12 }],
+      },
+      ["Law rune"],
+    );
+
+    expect(result[0]).toEqual({
+      item: "Law rune",
+      owned: 312,
+      have: true,
+      sources: { bank: 300, rune_pouch: 12 },
+    });
+  });
+
+  it("finds a rune held only in the pouch", () => {
+    const result = checkMaterials(
+      { bank: [], rune_pouch: [{ id: 561, name: "Nature rune", quantity: 44 }] },
+      ["Nature rune"],
+    );
+
+    expect(result[0].have).toBe(true);
+    expect(result[0].owned).toBe(44);
+    expect(result[0].sources).toEqual({ rune_pouch: 44 });
+  });
+
+  it("keeps exact matching inside the pouch", () => {
+    // A real trap: a pouch commonly holds Sunfire runes, whose name contains
+    // "Fire rune". Counting them as fire runes would report a spell as castable
+    // when it is not.
+    const result = checkMaterials(
+      { rune_pouch: [{ id: 28929, name: "Sunfire rune", quantity: 50 }] },
+      ["Fire rune"],
+    );
+
+    expect(result[0].have).toBe(false);
+    expect(result[0].owned).toBe(0);
+    expect(result[0].similar?.[0]).toEqual({
+      name: "Sunfire rune",
+      quantity: 50,
+      sources: { rune_pouch: 50 },
+    });
+  });
+
+  it("is unchanged when no pouch is present", () => {
+    const withoutPouch = checkMaterials({ bank }, ["Silver bar"]);
+    expect(withoutPouch[0].sources.rune_pouch).toBeUndefined();
+    expect(withoutPouch[0].owned).toBe(62);
+  });
+});
+
+describe("extrasFingerprint", () => {
+  const base = { slots_used: 28, slots_total: 28, pouch_contents: null };
+
+  it("changes when the pouch changes but the item list does not", () => {
+    const before = extrasFingerprint({
+      ...base,
+      pouch_contents: [{ id: 563, name: "Law rune", quantity: 12 }],
+    });
+    const after = extrasFingerprint({
+      ...base,
+      pouch_contents: [{ id: 563, name: "Law rune", quantity: 3 }],
+    });
+    expect(before).not.toBe(after);
+  });
+
+  it("changes when the slot count changes", () => {
+    expect(extrasFingerprint(base)).not.toBe(extrasFingerprint({ ...base, slots_used: 20 }));
+  });
+
+  it("is order-independent, so rearranging pouch slots is not a change", () => {
+    const a = [
+      { id: 563, name: "Law rune", quantity: 12 },
+      { id: 561, name: "Nature rune", quantity: 5 },
+    ];
+    expect(extrasFingerprint({ ...base, pouch_contents: a })).toBe(
+      extrasFingerprint({ ...base, pouch_contents: [...a].reverse() }),
+    );
+  });
+
+  it("distinguishes an empty pouch from no pouch at all", () => {
+    expect(extrasFingerprint({ ...base, pouch_contents: [] })).toBe(
+      extrasFingerprint({ ...base, pouch_contents: null }),
+    );
+    // Both render as no runes; the stored null vs [] distinction is what the
+    // snapshot keeps, and it is not a content change worth a rewrite.
+  });
+});
+
+describe("hashItems folds in the extras", () => {
+  it("differs for identical items with different extras", async () => {
+    const items = [{ id: 995, name: "Coins", quantity: 100 }];
+    expect(await hashItems(items, "a")).not.toBe(await hashItems(items, "b"));
+  });
+
+  it("is unchanged for the no-extras call, so bank hashes stay stable", async () => {
+    const items = [{ id: 995, name: "Coins", quantity: 100 }];
+    expect(await hashItems(items)).toBe(await hashItems(items, ""));
   });
 });

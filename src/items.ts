@@ -21,6 +21,12 @@ export const MAX_ITEMS_PER_CONTAINER = 10_000;
 /** Long enough for every real item name; short enough to bound the payload. */
 const MAX_ITEM_NAME_LENGTH = 120;
 
+/**
+ * Rune pouch slots. RuneLite exposes six rune/quantity varbit pairs, which
+ * covers the regular and divine pouches.
+ */
+export const MAX_POUCH_SLOTS = 6;
+
 /** OSRS display names are at most 12 characters. */
 const MAX_USERNAME_LENGTH = 12;
 
@@ -49,6 +55,18 @@ export const ingestPayloadSchema = z.object({
     .refine((c) => CONTAINERS.some((name) => c[name] !== undefined), {
       message: "containers must include at least one of bank, inventory, equipment",
     }),
+  /**
+   * Occupied and total inventory slots, counted before the plugin merged stacks
+   * by item id. Without these the item list's length is the only slot estimate
+   * available, and it undercounts every non-stackable duplicate.
+   */
+  inventory_slots_used: z.number().int().nonnegative().max(MAX_ITEMS_PER_CONTAINER).optional(),
+  inventory_slots_total: z.number().int().nonnegative().max(MAX_ITEMS_PER_CONTAINER).optional(),
+  /**
+   * Runes in a carried rune pouch. The inventory reports the pouch as one opaque
+   * item, so these would otherwise be invisible. A pouch holds at most six kinds.
+   */
+  pouch_contents: z.array(itemStackSchema).max(MAX_POUCH_SLOTS).optional(),
 });
 
 export type IngestPayload = z.infer<typeof ingestPayloadSchema>;
@@ -80,12 +98,18 @@ export function lastSyncKey(username: string): string {
  * Stable content hash for a container, used to skip rewriting a bank that has
  * not changed. Only id/quantity/slot matter — a name is a function of the id,
  * so a RuneLite name-cache refresh should not count as a change.
+ *
+ * `extra` folds in anything stored alongside the items that can change on its
+ * own. Draining pouch runes leaves the inventory item list identical, so a hash
+ * over items alone would dedupe that write away and serve stale pouch contents
+ * under a fresh-looking snapshot age.
  */
-export async function hashItems(items: ItemStack[]): Promise<string> {
-  const canonical = items
-    .map((item) => `${item.id}:${item.quantity}:${item.slot ?? ""}`)
-    .sort()
-    .join("|");
+export async function hashItems(items: ItemStack[], extra = ""): Promise<string> {
+  const canonical =
+    items
+      .map((item) => `${item.id}:${item.quantity}:${item.slot ?? ""}`)
+      .sort()
+      .join("|") + (extra === "" ? "" : `#${extra}`);
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonical));
   return Array.from(new Uint8Array(digest))
     .map((byte) => byte.toString(16).padStart(2, "0"))
@@ -182,20 +206,62 @@ export function renderItemLines(
   };
 }
 
+/**
+ * Inventory-only facts stored beside the item list.
+ *
+ * Null rather than absent, so an older plugin that sends none of them is
+ * distinguishable from one that reported a genuinely empty pouch.
+ */
+export interface InventoryExtras {
+  slots_used: number | null;
+  slots_total: number | null;
+  pouch_contents: ItemStack[] | null;
+}
+
+export function inventoryExtras(payload: IngestPayload): InventoryExtras {
+  return {
+    slots_used: payload.inventory_slots_used ?? null,
+    slots_total: payload.inventory_slots_total ?? null,
+    pouch_contents: payload.pouch_contents ?? null,
+  };
+}
+
+/** Canonical form of the extras, folded into the inventory's content hash. */
+export function extrasFingerprint(extras: InventoryExtras): string {
+  const pouch = (extras.pouch_contents ?? [])
+    .map((rune) => `${rune.id}:${rune.quantity}`)
+    .sort()
+    .join(",");
+  return `${extras.slots_used ?? ""}/${extras.slots_total ?? ""}/${pouch}`;
+}
+
 export type ContainerItems = Partial<Record<ContainerName, ItemStack[]>>;
+
+/**
+ * Where owned items can be found.
+ *
+ * A carried rune pouch holds real runes, so "how many law runes do I have" must
+ * count them — but it is not a stored container: it has no KV key of its own and
+ * travels inside the inventory snapshot. Keeping it out of `CONTAINERS` is what
+ * stops it leaking into storage and the ingest schema.
+ */
+export const MATERIAL_SOURCES = [...CONTAINERS, "rune_pouch"] as const;
+export type MaterialSource = (typeof MATERIAL_SOURCES)[number];
+
+export type SourceItems = Partial<Record<MaterialSource, ItemStack[]>>;
 
 export interface MaterialCheck {
   item: string;
-  /** Total across every container, counting exact name matches only. */
+  /** Total across every source, counting exact name matches only. */
   owned: number;
   have: boolean;
-  sources: Partial<Record<ContainerName, number>>;
+  sources: Partial<Record<MaterialSource, number>>;
   /**
    * Present only when nothing matched exactly. Charged and enchanted items
    * ("Amulet of glory(4)") are distinct items, so they are reported separately
    * rather than being silently counted as the base item.
    */
-  similar?: Array<{ name: string; quantity: number; sources: Partial<Record<ContainerName, number>> }>;
+  similar?: Array<{ name: string; quantity: number; sources: Partial<Record<MaterialSource, number>> }>;
 }
 
 /**
@@ -204,15 +270,15 @@ export interface MaterialCheck {
  * exact wiki item names — hence exact matching, with near-misses surfaced
  * separately instead of folded into the total.
  */
-export function checkMaterials(containers: ContainerItems, names: string[]): MaterialCheck[] {
+export function checkMaterials(containers: SourceItems, names: string[]): MaterialCheck[] {
   return names.map((rawName) => {
     const name = rawName.trim();
     const needle = name.toLowerCase();
 
-    const sources: Partial<Record<ContainerName, number>> = {};
+    const sources: Partial<Record<MaterialSource, number>> = {};
     let owned = 0;
 
-    for (const container of CONTAINERS) {
+    for (const container of MATERIAL_SOURCES) {
       const items = containers[container];
       if (!items) continue;
 
@@ -230,9 +296,9 @@ export function checkMaterials(containers: ContainerItems, names: string[]): Mat
 
     // Nothing exact. Offer substring matches so "Amulet of glory" still
     // surfaces "Amulet of glory(4)" without claiming the player owns one.
-    const similar = new Map<string, { name: string; quantity: number; sources: Partial<Record<ContainerName, number>> }>();
+    const similar = new Map<string, { name: string; quantity: number; sources: Partial<Record<MaterialSource, number>> }>();
 
-    for (const container of CONTAINERS) {
+    for (const container of MATERIAL_SOURCES) {
       for (const item of containers[container] ?? []) {
         if (!item.name.toLowerCase().includes(needle)) continue;
 

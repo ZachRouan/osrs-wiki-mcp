@@ -11,10 +11,14 @@ import {
   type ContainerItems,
   type ContainerName,
   containerKey,
+  extrasFingerprint,
   hashItems,
   type IngestPayload,
+  type InventoryExtras,
+  inventoryExtras,
   type ItemStack,
   lastSyncKey,
+  type SourceItems,
 } from "./items";
 
 /**
@@ -46,6 +50,12 @@ export interface StoredContainer {
   client_timestamp: string | null;
   count: number;
   items: ItemStack[];
+  /**
+   * Inventory only, and absent on snapshots written before the plugin sent them.
+   * Held here rather than in a container of its own so a rune pouch costs no
+   * extra KV write and can never disagree with the inventory it came from.
+   */
+  extras?: InventoryExtras;
 }
 
 export interface SyncIndexEntry {
@@ -84,16 +94,26 @@ export async function readContainer(
   return (await kv.get(containerKey(username, container), "json")) as StoredContainer | null;
 }
 
-/** Read every container at once, for tools that search all of them. */
-export async function readAllContainers(kv: ItemKV, username: string): Promise<ContainerItems> {
+/**
+ * Read every source of owned items at once, for tools that search all of them.
+ *
+ * A carried rune pouch is surfaced as its own source even though it is stored
+ * inside the inventory snapshot: runes in the pouch are owned runes, and a
+ * materials check that ignored them would under-report.
+ */
+export async function readAllContainers(kv: ItemKV, username: string): Promise<SourceItems> {
   const stored = await Promise.all(
     CONTAINERS.map((container) => readContainer(kv, username, container)),
   );
 
-  const result: ContainerItems = {};
+  const result: SourceItems = {};
   CONTAINERS.forEach((container, index) => {
     const snapshot = stored[index];
     if (snapshot) result[container] = snapshot.items;
+
+    if (container === "inventory" && snapshot?.extras?.pouch_contents?.length) {
+      result.rune_pouch = snapshot.extras.pouch_contents;
+    }
   });
   return result;
 }
@@ -137,7 +157,8 @@ export async function storeContainers(
       continue;
     }
 
-    const hash = await hashItems(items);
+    const extras = container === "inventory" ? inventoryExtras(payload) : null;
+    const hash = await hashItems(items, extras ? extrasFingerprint(extras) : "");
 
     if (previous && previous.hash === hash) {
       // Contents identical: refresh freshness only, skip the expensive write.
@@ -154,6 +175,7 @@ export async function storeContainers(
       client_timestamp: payload.timestamp ?? null,
       count: items.length,
       items,
+      ...(extras ? { extras } : {}),
     };
 
     const body = JSON.stringify(snapshot);
