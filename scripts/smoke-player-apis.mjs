@@ -10,7 +10,11 @@
  */
 
 const USER_AGENT = "osrs-mcp/1.0 (personal project)";
-const username = process.argv[2] ?? process.env.DEFAULT_PLAYER ?? "IronExample";
+const username = process.argv[2] ?? process.env.DEFAULT_PLAYER;
+if (!username) {
+  console.error("Usage: node scripts/smoke-player-apis.mjs <username>   (or set DEFAULT_PLAYER)");
+  process.exit(2);
+}
 const encoded = encodeURIComponent(username);
 
 const bold = (s) => `[1m${s}[0m`;
