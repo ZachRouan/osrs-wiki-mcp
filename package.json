@@ -1,6 +1,13 @@
 {
   "name": "osrs-wiki-mcp",
   "version": "1.0.0",
+  "description": "Remote MCP server exposing the Old School RuneScape Wiki and live player data as tools, on Cloudflare Workers",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ZachRouan/osrs-wiki-mcp.git"
+  },
+  "license": "MIT",
+  "author": "Zach Rouan",
   "private": true,
   "type": "module",
   "scripts": {

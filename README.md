@@ -1,5 +1,7 @@
 # OSRS Wiki MCP Server
 
+[![CI](https://github.com/ZachRouan/osrs-wiki-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/ZachRouan/osrs-wiki-mcp/actions/workflows/ci.yml)
+
 A remote [MCP](https://modelcontextprotocol.io) server that exposes the
 [Old School RuneScape Wiki](https://oldschool.runescape.wiki) as tools. Runs on Cloudflare Workers,
 connects to claude.ai as a custom connector.
@@ -135,9 +137,7 @@ and reports how many of the smallest stacks it dropped.
 
 Set `SYNC_TOKEN` as a Worker secret (above), build the plugin, and put the same token in its config
 alongside your `https://<worker>/ingest/items` URL. Full build and install steps are in the
-[plugin README](https://github.com/ZachRouan/runelite-item-sync). Local development helpers,
-including the developer-mode launcher for the Flatpak Jagex Launcher, are in
-[`plugin-dev/`](plugin-dev/).
+[plugin README](https://github.com/ZachRouan/runelite-item-sync).
 
 The endpoint is the only writable surface on this Worker:
 
@@ -201,14 +201,15 @@ effects on the strength of these checks alone.
 
 ```bash
 npm run dev        # http://localhost:8787
-npm test           # 209 tests
+npm test           # 212 tests
 npm run typecheck
-npm run smoke      # hits the live player APIs — not part of npm test
+npm run smoke -- <username>   # hits the live player APIs — not part of npm test
 ```
 
-`npm run smoke [username]` pretty-prints real responses from the hiscores, WikiSync and Wise Old
-Man. It's excluded from the test suite on purpose: it depends on third-party services and on an
-account's current state, so it would fail for reasons that have nothing to do with this code.
+`npm run smoke -- <username>` (or set `DEFAULT_PLAYER`) pretty-prints real responses from the
+hiscores, WikiSync and Wise Old Man. It's excluded from the test suite on purpose: it depends on
+third-party services and on an account's current state, so it would fail for reasons that have
+nothing to do with this code.
 
 Set `MCP_SECRET_PATH` in a `.dev.vars` file to exercise the secret path locally (it's gitignored).
 Without it, `wrangler dev` serves the plain `/mcp` path.
@@ -248,6 +249,10 @@ claude.ai ──Streamable HTTP──▶ Worker (McpAgent) ──▶ KV cache �
 - `src/infobox.ts` / `src/wikitext.ts` — the template parser and its scanners
 - `src/player-api.ts` — hiscores, WikiSync and Wise Old Man clients
 - `src/hiscores.ts` / `src/wikisync.ts` / `src/wom.ts` — pure mappers for each player API
+
+[`docs/design-notes.md`](docs/design-notes.md) records what was built and, more usefully, which
+assumptions turned out to be wrong once checked against real data. The quest journal feature has
+its own design doc in [`docs/specs/`](docs/specs/).
 
 Cache keys are the upstream URL with query params sorted, so ordering never splits the cache.
 Wiki and price responses live 1 hour; the item id mapping 24 hours; player data only 5 minutes,
@@ -310,3 +315,7 @@ curl -s -G 'https://oldschool.runescape.wiki/api.php' \
   --data-urlencode 'formatversion=2' --data-urlencode 'format=json' \
   --data-urlencode 'titles=Dragon boots'
 ```
+
+## License
+
+[MIT](LICENSE)

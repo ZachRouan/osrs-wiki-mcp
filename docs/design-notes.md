@@ -208,7 +208,7 @@ metadata is obvious at a glance.
   caching, SQLite-backed Durable Objects for sessions. All within the free tier.
 - **Item sync:** a RuneLite plugin in Java, in its own public repo so it could be submitted to the
   Plugin Hub. It stays there as the canonical copy even though the submission was declined.
-- **Testing:** Vitest, 209 tests against committed real fixtures, plus 23 JUnit tests pinning the
+- **Testing:** Vitest, 212 tests against committed real fixtures, plus 23 JUnit tests pinning the
   plugin's JSON against the Worker's schema. The infobox parser was written
   test-first. `npm run smoke` hits the live player APIs and is deliberately outside `npm test`,
   since it depends on third-party services and current account state.

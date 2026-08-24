@@ -1,7 +1,7 @@
 # Quest journal sync — design
 
 **Date:** 2026-07-29
-**Status:** approved, not yet implemented
+**Status:** implemented
 
 ## What this delivers
 
@@ -407,7 +407,7 @@ client and reading what arrives.
 
 - `runelite-item-sync/README.md`: the two new payload fields, the new toggle,
   and why the var is a fingerprint rather than a state source.
-- `README.md` and `osrs-wiki-mcp-plan.md`: the tool's new parameter, and updated
+- `README.md` and `docs/design-notes.md`: the tool's new parameter, and updated
   test counts.
 - Attribution for the ported tables in the plugin source and its README.
 
